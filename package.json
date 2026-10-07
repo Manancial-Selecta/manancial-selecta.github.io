@@ -1,0 +1,13 @@
+{
+  "name": "louvores-manancial",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "App do ministério Adoração & Artes Manancial Selecta: cultos, louvores, cifras (violão e teclado) e mensagem do WhatsApp.",
+  "scripts": {
+    "test": "node tests/unit.mjs && node tests/ui.cjs && node tests/firebase.cjs && node tests/offline.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

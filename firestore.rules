@@ -1,0 +1,64 @@
+rules_version = '2';
+
+// Regras do banco do app Louvores Manancial.
+// - Só quem entrou com o código do ministério (membro) lê e edita louvores e cultos.
+// - O código fica guardado em config/access, que ninguém lê pelo app: só estas regras conferem.
+// - A primeira pessoa a configurar (tela #setup) vira administradora e escolhe o código.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function memberPath() { return /databases/$(database)/documents/members/$(request.auth.uid); }
+    function accessPath() { return /databases/$(database)/documents/config/access; }
+    function isMember() { return signedIn() && exists(memberPath()); }
+    function isAdmin() { return isMember() && get(memberPath()).data.admin == true; }
+    function adminAfter() { return signedIn() && existsAfter(memberPath()) && getAfter(memberPath()).data.admin == true; }
+    function validName(n) { return n is string && n.size() > 0 && n.size() <= 60; }
+    function validCode(c) { return c is string && c.size() >= 6 && c.size() <= 60; }
+
+    // código do ministério
+    match /config/access {
+      allow read: if false;
+      allow create: if signedIn() && !exists(accessPath()) && adminAfter()
+        && validCode(request.resource.data.code) && request.resource.data.by == request.auth.uid;
+      allow update: if isAdmin() && validCode(request.resource.data.code);
+      allow delete: if false;
+    }
+
+    // marca de "app configurado" (a tela de entrada usa para dar o aviso certo)
+    match /config/public {
+      allow read: if signedIn();
+      allow create: if adminAfter();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // quem entrou: nome, código digitado e se é administrador (cada pessoa lê só o próprio)
+    match /members/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'code', 'admin', 'at'])
+        && validName(request.resource.data.name)
+        && (
+          // entrar: o código digitado tem de ser igual ao do ministério
+          (exists(accessPath()) && request.resource.data.admin == false
+            && request.resource.data.code == get(accessPath()).data.code)
+          ||
+          // configurar pela primeira vez: cria o código junto, no mesmo envio
+          (!exists(accessPath()) && request.resource.data.admin == true
+            && existsAfter(accessPath()) && getAfter(accessPath()).data.code == request.resource.data.code)
+        );
+      allow update: if signedIn() && request.auth.uid == uid
+        && validName(request.resource.data.name)
+        && request.resource.data.admin == resource.data.admin
+        && (request.resource.data.code == resource.data.code
+          || (resource.data.admin == true && request.resource.data.code == getAfter(accessPath()).data.code));
+      allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // louvores, cultos e preferências: todos os membros leem e editam
+    match /songs/{id} { allow read, write: if isMember(); }
+    match /lists/{id} { allow read, write: if isMember(); }
+    match /meta/{id} { allow read, write: if isMember(); }
+  }
+}

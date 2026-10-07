@@ -1,0 +1,32 @@
+/* Ícones (traço simples, cor do texto) */
+const sv = (d, w) => `<svg viewBox="0 0 24 24" width="${w || 20}" height="${w || 20}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${d}</svg>`;
+
+export const ICON = {
+  plus: sv('<path d="M12 5v14M5 12h14"/>'),
+  back: sv('<path d="M15 5l-7 7 7 7"/>', 24),
+  edit: sv('<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"/>'),
+  x: sv('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  search: sv('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'),
+  scroll: sv('<path d="M12 4v15M6.5 13.5L12 19l5.5-5.5"/>'),
+  altar: sv('<path d="M12 3v7M8.5 6.5h7"/><path d="M4 21v-6.5h16V21"/><path d="M7 14.5V12h10v2.5"/>'),
+  info: sv('<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.6v.1"/>'),
+  send: sv('<path d="M21 3L10 14"/><path d="M21 3l-6.5 18-4-8-8-4z"/>'),
+  copy: sv('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>'),
+  up: sv('<path d="M6 14.5l6-6 6 6"/>'),
+  down: sv('<path d="M6 9.5l6 6 6-6"/>'),
+  chev: sv('<path d="M9.5 6l6 6-6 6"/>'),
+  mic: sv('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>'),
+  link: sv('<path d="M9.5 14.5l5-5"/><path d="M11 6.5l1.2-1.2a4 4 0 0 1 5.6 5.6L16.5 12"/><path d="M13 17.5l-1.2 1.2a4 4 0 0 1-5.6-5.6L7.5 12"/>'),
+  cal: sv('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4"/>'),
+  music: sv('<path d="M9 17.5V5.5l11-2v12"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="15.5" r="2.5"/>'),
+  clock: sv('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>'),
+  user: sv('<circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>'),
+  logout: sv('<path d="M10 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4"/><path d="M15.5 16.5L20 12l-4.5-4.5M20 12H9"/>'),
+  install: sv('<path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19.5h14"/>'),
+  keyic: sv('<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L19 4M15.5 7.5l2.5 2.5"/>'),
+  upload: sv('<path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>'),
+  offline: sv('<path d="M3 3l18 18"/><path d="M8.6 5.3A6 6 0 0 1 17.7 10H18a4 4 0 0 1 2.4 7.2M16.5 19H7a4.5 4.5 0 0 1-1.6-8.7"/>'),
+  share: sv('<path d="M12 15V4"/><path d="M8 7.5L12 3.5l4 4"/><path d="M6.5 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5"/>'),
+  more: sv('<circle cx="12" cy="5.5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="18.5" r="1.2"/>'),
+  play: '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false"><path d="M8.5 5.8v12.4L19 12z" fill="currentColor"/></svg>'
+};
