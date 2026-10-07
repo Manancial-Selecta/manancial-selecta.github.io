@@ -6,6 +6,7 @@ App do ministério **Adoração & Artes Manancial Selecta**: cultos, louvores, c
 - **Tempo real:** o que uma pessoa altera aparece na hora para todas.
 - **Sem internet:** abre e mostra as cifras guardadas; o que for alterado é enviado quando a internet voltar.
 - **Todos os membros podem editar.** Para entrar: o link do app + o código do ministério + o nome.
+- **Endereço:** https://manancial-selecta.github.io/ (organização `manancial-selecta` no GitHub).
 - **Custo zero:** Firebase (plano gratuito Spark) para os dados e GitHub Pages para o endereço do app.
 
 ---

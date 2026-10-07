@@ -20,6 +20,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   fs.mkdirSync(path.join(tmp, 'data'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'tests', 'fixtures', 'prototipo.json'), path.join(tmp, 'data', 'prototipo.json'));
   fs.writeFileSync(path.join(tmp, 'src', 'config.js'), "export const FIREBASE = { apiKey: '' };\n"); /* modo demonstração no teste */
+  const V = fs.readFileSync(path.join(tmp, 'sw.js'), 'utf8').match(/const VERSION = '([^']+)';/)[1];
   const srv = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'], { cwd: tmp, stdio: 'ignore' });
   await sleep(700);
   const browser = await chromium.launch();
@@ -36,7 +37,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 10000 });
     check(true, 'modo offline instalado');
     const keys = await page.evaluate(() => caches.keys());
-    check(keys.includes('lm-core-1.0.0'), 'arquivos do app guardados', keys);
+    check(keys.includes('lm-core-' + V), 'arquivos do app guardados', keys);
     await page.fill('#g-code', 'manancial');
     await page.fill('#g-name', 'Teste Offline');
     await page.click('[data-act="g-join"]');
@@ -53,14 +54,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     /* versão nova publicada: aparece o aviso e o botão Atualizar troca a versão */
     const swPath = path.join(tmp, 'sw.js');
-    fs.writeFileSync(swPath, fs.readFileSync(swPath, 'utf8').replace("const VERSION = '1.0.0';", "const VERSION = '1.0.1-teste';"));
+    fs.writeFileSync(swPath, fs.readFileSync(swPath, 'utf8').replace(`const VERSION = '${V}';`, "const VERSION = '9.9.9-teste';"));
     await page.evaluate(() => navigator.serviceWorker.getRegistration().then(r => r.update()));
     await page.waitForSelector('#updbar', { timeout: 15000 });
     check(/versão nova/.test(await page.locator('#updbar').textContent()), 'aviso de versão nova');
     await Promise.all([page.waitForEvent('load', { timeout: 15000 }), page.click('#updbar button')]);
     await sleep(500);
     const keys2 = await page.evaluate(() => caches.keys());
-    check(keys2.includes('lm-core-1.0.1-teste') && !keys2.includes('lm-core-1.0.0'), 'versão nova no lugar da antiga', keys2);
+    check(keys2.includes('lm-core-9.9.9-teste') && !keys2.includes('lm-core-' + V), 'versão nova no lugar da antiga', keys2);
     await page.waitForSelector('#app:not([hidden])');
     check(true, 'app continua aberto depois de atualizar');
     await ctx.close();
