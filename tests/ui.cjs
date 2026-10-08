@@ -4,6 +4,7 @@ const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8790 + Math.floor(Math.random() * 100);
@@ -438,6 +439,68 @@ async function until(fn, ms) {
     check(await until(async () => (await dk()) === kA), 'tom do dia não muda pela tela da cifra');
     await lpg.locator('.panel [data-act="close"]').last().click();
     await lpg.waitForTimeout(200);
+    /* ----- letra, cifra simplificada e áudio no tom ----- */
+    await lpg.click('[data-act="tab"][data-v="louvores"]');
+    await lpg.click('[data-act="new"]');
+    await lpg.fill('#f-title', 'Teste Letra');
+    await lpg.fill('#f-cifra', '[Intro] D  Bm7  A11  G9\n\n[Primeira Parte]\nD          Bm7\nNada novo achei pra dizer\nA11        G9\nCanto o que sempre cantei\n\n[Refrão]\nG     D\nGratidão');
+    check(await lpg.locator('#cp-gts').isHidden() && await lpg.locator('#cp-gt').isVisible(), 'editor abre na principal');
+    await lpg.click('[data-act="cvar"][data-v="s"]');
+    check(await lpg.locator('#cp-gts').isVisible() && /simplificada/i.test(await lpg.locator('[data-el="keylabel"]').textContent()), 'editor mostra a simplificada');
+    await lpg.fill('#f-cifras', 'C    F    G    C\nNada novo achei pra dizer');
+    check(await until(async () => /Tom da cifra: <b>C<\/b>|Tom da cifra: C/.test(await lpg.locator('[data-el="detect"]').innerHTML())), 'tom da simplificada descoberto');
+    await lpg.click('[data-act="ctab"][data-v="lt"]');
+    check(await lpg.locator('#cp-lt').isVisible() && await lpg.locator('[data-el="cvar"]').isHidden() && /tirada da cifra \(3 linhas\)/.test(await lpg.locator('[data-el="detect"]').textContent()), 'aba Letra explica a letra automática');
+    await lpg.locator('.panel [data-act="save"]').first().click();
+    const sp9 = lastPanel(lpg);
+    await sp9.locator('[data-act="var"]').first().waitFor();
+    check(await sp9.locator('[data-el="varseg"]').isVisible(), 'chave Principal | Simplificada aparece');
+    await sp9.locator('[data-act="var"][data-v="1"]').click();
+    check(/C\s+F\s+G/.test(await sp9.locator('[data-el="cifra"]').textContent()) || /D\s+G\s+A/.test(await sp9.locator('[data-el="cifra"]').textContent()), 'mostra a simplificada', await sp9.locator('[data-el="cifra"]').textContent());
+    await sp9.locator('[data-act="var"][data-v="0"]').click();
+    await sp9.locator('[data-act="inst"][data-v="lt"]').click();
+    const lyr = await sp9.locator('[data-el="cifra"]').textContent();
+    check(/Nada novo achei pra dizer/.test(lyr) && !/Bm7|A11/.test(lyr) && /Refrão/i.test(lyr) && !/Intro/i.test(lyr), 'Letra: só a letra, sem acordes', lyr);
+    check(await sp9.locator('[data-el="keys"]').isHidden() && await sp9.locator('[data-el="varbar"]').isHidden() && await sp9.locator('[data-el="dstrip"]').isHidden(), 'Letra: tela limpa');
+    await sp9.locator('[data-act="size"][data-d="1"]').click();
+    check(/22px/.test(await sp9.locator('[data-el="cifra"]').getAttribute('style')), 'A+ aumenta a letra');
+    /* letra colada vale mais que a da cifra */
+    await sp9.locator('[data-act="edit"]').first().click();
+    check(await lpg.locator('#cp-lt').isVisible(), 'editar a partir da Letra abre a aba Letra');
+    await lpg.click('[data-act="letra-fill"]');
+    check(/Nada novo achei/.test(await lpg.inputValue('#f-letra')), 'copiar a letra da cifra para editar');
+    await lpg.fill('#f-letra', '[Coro]\nLetra colada aqui');
+    await lpg.locator('.panel [data-act="save"]').first().click();
+    check(await until(async () => /Letra colada aqui/.test(await lastPanel(lpg).locator('[data-el="cifra"]').textContent())), 'Letra mostra a letra colada');
+    await lastPanel(lpg).locator('[data-act="inst"][data-v="gt"]').click();
+    /* áudio no tom */
+    const wav = path.join(os.tmpdir(), 'lm-teste-' + process.pid + '.wav');
+    { const sr = 22050, n = sr * 4, b = Buffer.alloc(44 + n * 2); b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40); for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(12000 * Math.sin(2 * Math.PI * 440 * i / sr)), 44 + i * 2); fs.writeFileSync(wav, b); }
+    const ap = lastPanel(lpg);
+    await ap.locator('[data-act="audio"]').click();
+    check(/não deixa mudar o tom/.test(await ap.locator('[data-el="abox"]').textContent()), 'explica o áudio no tom');
+    check(/youtube\.com\/results\?search_query=.*tom/.test(await ap.locator('[data-el="abox"] a.minilink').getAttribute('href')), 'procurar no YouTube no tom');
+    await ap.locator('[data-au="file"]').setInputFiles(wav);
+    check(await until(async () => !(await ap.locator('.aplay').isDisabled()), 15000), 'áudio pronto para tocar');
+    check(/Gravação em/.test(await ap.locator('.ainfo').textContent()) && /no tom da gravação/.test(await ap.locator('.ainfo').textContent()), 'mostra o tom da gravação');
+    await ap.locator('.aplay').click();
+    check(await until(async () => (await ap.locator('[data-el="at"]').textContent()) !== '0:00', 4000), 'áudio toca');
+    const k2 = await ap.locator('.kchip:not([aria-pressed="true"])').nth(2).textContent();
+    await ap.locator('.kchip', { hasText: new RegExp('^' + k2.trim() + '$') }).first().click();
+    check(await until(async () => /(tom|tons) (acima|abaixo)/.test(await ap.locator('.ainfo').textContent()) && !(await ap.locator('.aplay').isDisabled()), 15000), 'trocar o tom muda o áudio', await ap.locator('.ainfo').textContent());
+
+    await ap.locator('.aplay').click();
+    await ap.locator('[data-act="close"]').first().click();
+    /* guardado no aparelho: ao abrir de novo, o áudio já está lá */
+    await lpg.locator('#list .lrow', { hasText: 'Teste Letra' }).click();
+    await lastPanel(lpg).locator('[data-act="audio"]').click();
+    check(await until(async () => /lm-teste/.test(await lastPanel(lpg).locator('[data-el="abox"]').textContent()), 8000), 'áudio fica guardado no aparelho');
+    await lastPanel(lpg).locator('[data-act="a-del"]').click();
+    check(await until(async () => /Escolher áudio do celular/.test(await lastPanel(lpg).locator('[data-el="abox"]').textContent())), 'remover o áudio');
+    await lastPanel(lpg).locator('[data-act="close"]').first().click();
+    await lpg.waitForTimeout(200);
+    fs.rmSync(wav, { force: true });
+    await lpg.click('[data-act="tab"][data-v="cultos"]');
     await backSuite(lpg, light, 'cw');
     const hist = await browser.newContext({ viewport: { width: 360, height: 740 }, serviceWorkers: 'block' });
     await hist.addInitScript(() => { delete window.CloseWatcher; });

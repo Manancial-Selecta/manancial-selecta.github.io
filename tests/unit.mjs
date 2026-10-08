@@ -5,6 +5,8 @@ import { parseMessage, splitMedley, parseReh } from '../src/parse.js';
 import { waText, cifraFor, hasCifra, origKey, defaultKind, defaultReh, rehText, cultoName, groupItems } from '../src/domain.js';
 import { guitarShape, guitarShapes, keyboardNotes, chordFormula, chordsOfLines, KNOWN_SHAPES } from '../src/chords.js';
 import { processCifra, detectKey, shiftKey, capoHint } from '../src/music.js';
+import { lyricsOf, hasSimple } from '../src/domain.js';
+import { stretch, semis } from '../src/stretch.js';
 import { fromPrototype, normSong, normList } from '../src/model.js';
 import { ytId } from '../src/youtube.js';
 
@@ -111,6 +113,34 @@ ok(d.songs.every(s => s.cifraKb === '' && s.keyKb === ''), 'louvores ganham cifr
 ok(d.lists.every(l => l.items.length > 0), 'cultos com louvores');
 eq(normList({ id: 'x', date: '2026-10-11', items: [] }, {}).reh, { date: '2026-10-11', time: '15:45' }, 'culto sem ensaio ganha o padrão');
 eq(normSong({ id: 'a', title: ' X ', bpm: '72.4' }).bpm, 72, 'bpm');
+
+/* ----- cifra simplificada ----- */
+const sim = { cifra: gt, cifraS: 'C    F    G    C\nHá uma fonte', cifraKb: kb, cifraKbS: '' };
+eq(cifraFor(sim, 'gt', true).text, sim.cifraS, 'violão simplificada');
+eq(cifraFor(sim, 'gt', true).key, 'C', 'tom da simplificada');
+eq(cifraFor(sim, 'gt', false).text, gt, 'violão principal');
+eq(cifraFor(sim, 'kb', true).text, kb, 'teclado sem simplificada usa a principal do teclado');
+ok(hasSimple(sim, 'gt') && !hasSimple(sim, 'kb'), 'quem tem simplificada');
+ok(hasCifra({ cifraS: 'G D\nx' }), 'só simplificada conta como cifra');
+
+/* ----- letra para quem canta ----- */
+const lt = lyricsOf({ cifra: '[Intro] D  Bm7  A11  G9\n\n[Primeira Parte]\n\nVIOLÃO: COLOCAR CAPOTRASTE NA CASA 2\n\nD          Bm7\nNada novo achei pra dizer\nA11        G9\nCanto o que sempre cantei\n\n[Solo] D A\n\n[Refrão]\nG     D\nGratidão' });
+eq(lt.lines.map(l => l.t + ':' + l.text), ['sec:Primeira Parte', 'ln:Nada novo achei pra dizer', 'ln:Canto o que sempre cantei', 'blank:', 'sec:Refrão', 'ln:Gratidão'], 'letra tirada da cifra');
+ok(lt.auto, 'letra automática');
+const lc = lyricsOf({ cifra: gt, letra: '[Verso]\nLinha um\n\n\nLinha dois\n' });
+eq(lc.lines.map(l => l.t + ':' + l.text), ['sec:Verso', 'ln:Linha um', 'blank:', 'ln:Linha dois'], 'letra colada vale mais que a da cifra');
+eq(lyricsOf({ cifra: '', letra: '' }).lines, [], 'sem cifra nem letra');
+
+/* ----- áudio em outro tom: estica sem mudar a altura ----- */
+const SR = 16000, sine = new Float32Array(SR * 2);
+for (let i = 0; i < sine.length; i++) sine[i] = 0.5 * Math.sin(2 * Math.PI * 330 * i / SR);
+const zc = y => { let c = 0; for (let i = SR / 2 + 1; i < SR * 1.5; i++) if (y[i - 1] <= 0 && y[i] > 0) c++; return c; };
+[-3, 2, 5].forEach(n => {
+  const r = Math.pow(2, n / 12), y = stretch(sine, r, SR);
+  eq(y.length, Math.round(sine.length * r), 'duração esticada ' + n);
+  ok(Math.abs(zc(y) - 330) <= 3, 'altura mantida ' + n + ' (' + zc(y) + ')');
+});
+eq([semis(7, 2), semis(2, 4), semis(0, 6), semis(9, 0)], [-5, 2, 6, 3], 'semitons pelo caminho mais curto');
 
 /* ----- YouTube ----- */
 eq(ytId('https://youtu.be/dQw4w9WgXcQ?si=abc'), 'dQw4w9WgXcQ', 'link curto');

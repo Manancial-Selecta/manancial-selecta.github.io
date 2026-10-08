@@ -21,6 +21,11 @@ export function normSong(s) {
     cifra: str(o.cifra),
     cifraKb: str(o.cifraKb),
     keyKb: str(o.keyKb),
+    cifraS: str(o.cifraS),
+    keyS: str(o.keyS),
+    cifraKbS: str(o.cifraKbS),
+    keyKbS: str(o.keyKbS),
+    letra: str(o.letra),
     keys,
     up: Number(o.up) || 0,
     by: str(o.by)

@@ -1,6 +1,6 @@
 /* Modo offline: guarda o app no aparelho para abrir sem internet.
    Para publicar uma versão nova, mude VERSION; o app mostra "Tem uma versão nova do app" para quem estiver usando. */
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const CORE = 'lm-core-' + VERSION;
 const RUNTIME = 'lm-runtime';
 const FIREBASE = 'https://www.gstatic.com/firebasejs/12.19.0/';
@@ -23,6 +23,9 @@ const FILES = [
   'src/model.js',
   'src/chords.js',
   'src/youtube.js',
+  'src/audio.js',
+  'src/stretch.js',
+  'src/stretch-worker.js',
   'src/icons.js',
   'src/store-local.js',
   'src/store-firebase.js'

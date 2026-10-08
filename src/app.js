@@ -5,7 +5,7 @@
 import { MAJOR_KEYS, MINOR_KEYS, keyInfo, keyByPc, shiftKey, capoHint, chordTok, NEUTRAL_RE, analyzeLine, inlineToTwoLines, processCifra, countChordLines, detectKey } from './music.js';
 import { $, $$, esc, norm, normKey, byTitle, clone, storeGet, storeSet, uid, isIso, dObj, isoOf, today, wd, wdShort, dm, longDate, relDay, hm, MO, titleCase, initials, mergeNames, daysBetween } from './util.js';
 import { parseMessage } from './parse.js';
-import { KIND_CHIPS, defaultKind, cultoName, REH_FIXED, isFixedReh, rehKey, defaultReh, rehText, hasCifra, cifraFor, origKey, showKey, listSeq, groupItems, posOf, waText } from './domain.js';
+import { KIND_CHIPS, defaultKind, cultoName, REH_FIXED, isFixedReh, rehKey, defaultReh, rehText, hasCifra, hasSimple, cifraFor, lyricsOf, origKey, showKey, listSeq, groupItems, posOf, waText } from './domain.js';
 import { guitarShapes, guitarSVG, keyboardSVG, keyboardNotes, chordsOfLines } from './chords.js';
 import { ytId, ytWatch, ytThumb, ytEmbed, ytSearch } from './youtube.js';
 import { ICON } from './icons.js';
@@ -16,6 +16,8 @@ const S = {
   tab: 'cultos', q: '', ready: false,
   inst: storeGet('localStorage', 'lm-inst') === 'kb' ? 'kb' : 'gt',
   chords: storeGet('localStorage', 'lm-chords') !== '0',
+  letra: storeGet('localStorage', 'lm-letra') === '1',
+  simple: storeGet('localStorage', 'lm-simple') === '1',
   status: { online: true, pending: 0, synced: true }
 };
 let CFG = {}, STORE = null, UNSUB = null;
@@ -102,6 +104,7 @@ function pushRecent(id) {
 /* ===== Busca de louvores ===== */
 let INDEX = [];
 function lyricLines(so) {
+  if (so.letra && so.letra.trim()) return lyricsOf(so).lines.filter(l => l.t === 'ln').map(l => ({ raw: l.text, n: norm(l.text) }));
   const t = so.cifra && so.cifra.trim() ? so.cifra : (so.cifraKb || '');
   if (!t.trim()) return [];
   return inlineToTwoLines(t).split('\n')
@@ -895,6 +898,7 @@ function openSong(id, ctx, noanim) {
   p._kind = 'song';
   p._cleanup = () => {
     st.scroll = false;
+    if (st.au && st.au.player) { st.au.player.close(); st.au.player = null; }
     if (st.lock) { try { st.lock.release(); } catch (e) { /* ok */ } st.lock = null; }
   };
   wireVideo(p);
@@ -1039,9 +1043,14 @@ function songPanelHTML(so, st) {
         <button class="tool tbtn" data-act="scroll" aria-pressed="false">${ICON.scroll}<span>Rolar</span></button>
         <div class="tool" data-el="speed" hidden><span class="lbl2">Velocidade</span><button data-act="speed" data-d="-1" aria-label="Mais devagar">−</button><span class="val" data-el="speedv">2</span><button data-act="speed" data-d="1" aria-label="Mais rápido">+</button></div>
         <button class="tool tbtn" data-act="palco" aria-pressed="false">${ICON.altar}<span>Modo altar</span></button>
+        <button class="tool tbtn" data-act="audio" aria-pressed="false">${ICON.phones}<span>Áudio no tom</span></button>
       </div>
+      <div class="abox" data-el="abox" hidden></div>
       <div class="instbar" data-el="instbar">
-        <div class="seg" role="group" aria-label="Instrumento"><button data-act="inst" data-v="gt" aria-pressed="false">Violão</button><button data-act="inst" data-v="kb" aria-pressed="false">Teclado</button></div>
+        <div class="seg seg3" role="group" aria-label="Ver"><button data-act="inst" data-v="gt" aria-pressed="false">Violão</button><button data-act="inst" data-v="kb" aria-pressed="false">Teclado</button><button data-act="inst" data-v="lt" aria-pressed="false">Letra</button></div>
+      </div>
+      <div class="varbar" data-el="varbar">
+        <div class="seg sm" role="group" aria-label="Versão da cifra" data-el="varseg"><button data-act="var" data-v="0" aria-pressed="false">Principal</button><button data-act="var" data-v="1" aria-pressed="false">Simplificada</button></div>
         <button class="linkbtn" data-act="toggle-chords" data-el="chordsbtn">Esconder acordes</button>
       </div>
       <p class="instnote" data-el="instnote" hidden></p>
@@ -1099,8 +1108,9 @@ function navHTML(l, i) {
 }
 
 function kinfoHTML(so, st) {
-  const day = !!st.ctx, cf = cifraFor(so, S.inst), orig = cf.key;
+  const day = !!st.ctx, cf = cifraFor(so, S.inst, S.simple), orig = cf.key;
   const lines = [];
+  if (S.letra) return st.base ? `<p>${day ? 'Tom do dia' : 'Tom'} <b>${st.base}</b></p>` : '';
   if (!st.base) lines.push(st.key ? `Vendo em <b>${st.key}</b>, só na sua tela` : 'Tom ainda não definido para este louvor.');
   else if (st.key === st.base) {
     const lbl = day ? 'Tom do dia' : (so.play ? 'Tom que cantamos' : 'Tom');
@@ -1135,10 +1145,23 @@ function lyricHTML(t) {
   return esc(t);
 }
 
+function renderLetra(p) {
+  const so = songById(p._st.id), el = $('[data-el="cifra"]', p);
+  const { lines } = lyricsOf(so);
+  el.classList.add('letra');
+  if (!lines.length) {
+    el.innerHTML = `<div class="cempty"><p>Este louvor ainda não tem letra.</p><button class="btn pri" data-act="edit" data-id="${esc(so.id)}" data-tab="lt">${ICON.plus}Colar a letra</button></div>`;
+    return;
+  }
+  el.innerHTML = lines.map(l => l.t === 'sec' ? `<div class="lsec">${esc(l.text)}</div>` : l.t === 'blank' ? '<div class="lgap"></div>' : `<p class="lln">${esc(l.text)}</p>`).join('');
+  fitCifra(p);
+}
 function renderCifra(p) {
   const st = p._st, so = songById(st.id);
   const el = $('[data-el="cifra"]', p), strip = $('[data-el="dstrip"]', p), note = $('[data-el="instnote"]', p);
-  const cf = cifraFor(so, S.inst);
+  if (S.letra) { note.hidden = true; strip.hidden = true; strip.innerHTML = ''; renderLetra(p); return; }
+  el.classList.remove('letra');
+  const cf = cifraFor(so, S.inst, S.simple);
   note.hidden = !(cf.text && cf.fallback);
   note.textContent = cf.fallback ? (S.inst === 'kb' ? 'Este louvor ainda não tem cifra de teclado. Mostrando a do violão.' : 'Este louvor só tem a cifra de teclado.') : '';
   if (!cf.text) {
@@ -1177,6 +1200,13 @@ function fitCifra(p) {
   const st = p._st, el = $('[data-el="cifra"]', p);
   if (!el) return;
   let size;
+  if (S.letra) {
+    size = st.lsize || 20;
+    if (st.palco) size += 6;
+    st.cur = size;
+    el.style.setProperty('--lsize', size + 'px');
+    return;
+  }
   if (st.size) size = st.size;
   else {
     const lens = $$('.ln', el).filter(n => !n.classList.contains('sec') && !n.classList.contains('tabnote')).map(n => n.textContent.length);
@@ -1192,9 +1222,10 @@ function fitCifra(p) {
 function updateSongPanel(p, first) {
   const st = p._st, so = songById(st.id);
   if (!so) { removePanel(p); return; }
-  const gt = S.inst === 'gt';
-  const cif = !!cifraFor(so, S.inst).text;
+  const gt = S.inst === 'gt' && !S.letra;
+  const cif = S.letra ? lyricsOf(so).lines.length > 0 : !!cifraFor(so, S.inst).text;
   $$('.kchip', p).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === st.key)));
+  $('[data-el="keys"]', p).hidden = S.letra;
   $('[data-el="capotool"]', p).hidden = !gt;
   $('[data-el="capo"]', p).textContent = st.capo;
   $('[data-act="capo"][data-d="-1"]', p).disabled = st.capo <= 0;
@@ -1208,10 +1239,15 @@ function updateSongPanel(p, first) {
   $('[data-el="speedv"]', p).textContent = st.speed;
   $('[data-act="palco"]', p).setAttribute('aria-pressed', String(st.palco));
   p.classList.toggle('palco', st.palco);
-  $$('[data-act="inst"]', p).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.inst)));
+  $$('[data-act="inst"]', p).forEach(b => b.setAttribute('aria-pressed', String(S.letra ? b.dataset.v === 'lt' : b.dataset.v === S.inst)));
   const cb = $('[data-el="chordsbtn"]', p);
   cb.textContent = S.chords ? 'Esconder acordes' : 'Mostrar acordes';
-  cb.hidden = !cif;
+  cb.hidden = !cif || S.letra;
+  const simpleOk = !S.letra && hasSimple(so, S.inst);
+  $('[data-el="varseg"]', p).hidden = !simpleOk;
+  $$('[data-act="var"]', p).forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === '1') === (S.simple && simpleOk))));
+  $('[data-el="varbar"]', p).hidden = S.letra || (!simpleOk && cb.hidden);
+  $('[data-act="audio"]', p).setAttribute('aria-pressed', String(!!st.audioOpen));
   $('[data-el="video"]', p).classList.toggle('hid', st.hideVideo);
   $('[data-act="toggle-video"]', p).textContent = st.hideVideo ? 'Mostrar vídeo' : 'Esconder vídeo';
   $('[data-el="kinfo"]', p).innerHTML = kinfoHTML(so, st);
@@ -1236,6 +1272,134 @@ function startScroll(p) {
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
+}
+
+/* ===== Áudio no tom: um áudio do celular tocado no tom que a pessoa está vendo =====
+   (o YouTube não deixa mudar o tom do vídeo; o arquivo fica só neste aparelho) */
+let AUDIO = null;
+const audioMod = async () => AUDIO || (AUDIO = await import('./audio.js'));
+const fmtT = s => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function tonsTxt(n) {
+  if (!n) return 'no tom da gravação';
+  const a = Math.abs(n), w = Math.floor(a / 2), h = a % 2;
+  return (w ? String(w) : '') + (h ? '½' : '') + (w >= 2 ? ' tons' : ' tom') + (n > 0 ? ' acima' : ' abaixo');
+}
+const audioTarget = st => st.key || st.base || '';
+function audioShift(p) {
+  const st = p._st, au = st.au, tg = audioTarget(st);
+  if (!au || !au.rec || !tg) return 0;
+  return semisOf(keyInfo(au.rec).pc, keyInfo(tg).pc);
+}
+function semisOf(a, b) { let n = ((b - a) % 12 + 12) % 12; if (n > 6) n -= 12; return n; }
+function ytToneLink(so, k) { return ytSearch(`${so.title} ${so.version || ''} tom ${k || ''} playback`.replace(/\s+/g, ' ').trim()); }
+async function toggleAudio(p) {
+  const st = p._st, box = $('[data-el="abox"]', p);
+  st.audioOpen = !st.audioOpen;
+  box.hidden = !st.audioOpen;
+  updateSongPanel(p);
+  if (!st.audioOpen) { if (st.au && st.au.player) st.au.player.pause(); return; }
+  if (!st.au) {
+    st.au = { name: '', rec: '', s: { status: 'idle' }, player: null };
+    renderAudio(p);
+    const mod = await audioMod();
+    const saved = await mod.getSaved(st.id);
+    /* só troca a caixa se havia áudio guardado (e a pessoa ainda não escolheu outro) */
+    if (saved && saved.blob && p.isConnected && !st.au.name) startAudio(p, saved.blob, saved.name, saved.rec);
+    return;
+  }
+  renderAudio(p);
+}
+async function startAudio(p, blob, name, rec) {
+  const st = p._st, so = songById(st.id), mod = await audioMod();
+  if (st.au.player) st.au.player.close();
+  st.au.name = name || 'áudio';
+  st.au.rec = rec || origKey(so) || audioTarget(st) || '';
+  st.au.player = mod.createPlayer(s => { st.au.s = s; if (p.isConnected) renderAudio(p); });
+  st.au.player.setShift(audioShift(p));
+  renderAudio(p);
+  await st.au.player.load(blob);
+}
+function audioFile(p, input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const st = p._st;
+  if (f.size > 40 * 1024 * 1024) { toast('Esse arquivo é grande demais (máximo 40 MB).'); return; }
+  audioMod().then(mod => {
+    const rec = (st.au && st.au.rec) || origKey(songById(st.id)) || audioTarget(st) || '';
+    mod.saveAudio(st.id, { blob: f, name: f.name, rec }).catch(() => toast('Não deu para guardar o áudio neste aparelho; ele vale só enquanto a tela estiver aberta.'));
+    startAudio(p, f, f.name, rec);
+  });
+}
+function audioRetune(p) {
+  const st = p._st;
+  if (!st.au || !st.au.player) return;
+  st.au.player.setShift(audioShift(p));
+  renderAudio(p);
+}
+function audioPlay(p) {
+  const au = p._st.au;
+  if (!au || !au.player) return;
+  if (au.s.playing) au.player.pause();
+  else { stopVideo(p); au.player.play(); tickAudio(p); }
+}
+async function audioRemove(p) {
+  const st = p._st, mod = await audioMod();
+  if (st.au && st.au.player) st.au.player.close();
+  await mod.dropAudio(st.id);
+  st.au = { name: '', rec: '', s: { status: 'idle' }, player: null };
+  renderAudio(p);
+  toast('Áudio removido deste aparelho');
+}
+function tickAudio(p) {
+  const au = p._st.au;
+  if (!au || !au.player || !au.s.playing || !p.isConnected) return;
+  const t = au.player.time(), r = $('[data-au="seek"]', p), tt = $('[data-el="at"]', p);
+  if (r && !r._drag) r.value = String(Math.round(1000 * t / (au.s.dur || 1)));
+  if (tt) tt.textContent = fmtT(t);
+  requestAnimationFrame(() => tickAudio(p));
+}
+function renderAudio(p) {
+  const st = p._st, so = songById(st.id), box = $('[data-el="abox"]', p), au = st.au;
+  if (!box || !so || !au) return;
+  const tg = audioTarget(st), n = audioShift(p), s = au.s || {};
+  const yt = `<a class="minilink" href="${esc(ytToneLink(so, tg))}" target="_blank" rel="noopener">Procurar no YouTube${tg ? ' em ' + esc(tg) : ''}</a>`;
+  const pick = label => `<label class="btn${au.name ? '' : ' pri'} afile">${ICON.music}<span>${label}</span><input type="file" accept="audio/*" data-au="file" hidden></label>`;
+  if (!au.name) {
+    box.innerHTML = `<p class="ah">Ouvir em outro tom</p>
+      <p class="hint">O vídeo do YouTube não deixa mudar o tom. Escolha o áudio desta música que você tem no celular (MP3, M4A…) e o app toca no tom que você está vendo. O arquivo fica só neste aparelho.</p>
+      <div class="arow">${pick('Escolher áudio do celular')}${yt}</div>`;
+    return;
+  }
+  if (s.status === 'error') {
+    box.innerHTML = `<p class="ah">${esc(au.name)}</p><p class="note bad">${ICON.info}<span>${s.error === 'decode' ? 'Não consegui abrir esse arquivo. Tente um MP3 ou M4A.' : 'Não deu para preparar o áudio neste aparelho.'}</span></p>
+      <div class="arow">${pick('Escolher outro áudio')}<button class="linkbtn" data-act="a-del">Remover</button></div>`;
+    return;
+  }
+  const busy = s.status === 'loading' || s.status === 'preparing' || s.status === 'idle';
+  const recOpts = ALL_KEYS.map(k => `<option${k === au.rec ? ' selected' : ''}>${k}</option>`).join('');
+  box.innerHTML = `<p class="ah">${esc(au.name)}</p>
+    <div class="aplayer">
+      <button class="aplay" data-act="a-play" ${busy ? 'disabled' : ''} aria-label="${s.playing ? 'Pausar' : 'Tocar'}">${s.playing ? ICON.pause : ICON.play}</button>
+      <div class="aprog"><input type="range" min="0" max="1000" step="1" value="${Math.round(1000 * (s.t || 0) / (s.dur || 1))}" data-au="seek" aria-label="Posição da música" ${busy ? 'disabled' : ''}>
+        <div class="atime"><span data-el="at">${fmtT(s.t)}</span><span>${busy ? (s.status === 'preparing' ? 'Preparando em ' + esc(tg) + '…' : 'Abrindo…') : fmtT(s.dur)}</span></div></div>
+    </div>
+    <p class="ainfo">Gravação em <span class="selw sm"><select class="inp asel" data-au="rec" aria-label="Tom da gravação">${au.rec ? '' : '<option value="" selected>?</option>'}${recOpts}</select></span> → ${tg && au.rec ? `tocando em <b>${esc(tg)}</b> · ${tonsTxt(n)}` : 'tocando no tom original. Escolha o tom da gravação e um tom acima para mudar.'}</p>
+    ${Math.abs(n) > 4 ? '<p class="hint">Mudança grande: o som pode ficar um pouco artificial.</p>' : ''}
+    <p class="hint">Se a gravação estiver em outro tom, ajuste em "Gravação em".</p>
+    <div class="arow">${pick('Trocar áudio')}<button class="linkbtn" data-act="a-del">Remover</button>${yt}</div>`;
+  if (s.playing) tickAudio(p);
+}
+function audioInput(p, t) {
+  const st = p._st, au = st.au;
+  if (t.dataset.au === 'file') { audioFile(p, t); return; }
+  if (!au || !au.player) return;
+  if (t.dataset.au === 'seek') { t._drag = false; au.player.seek(+t.value / 1000); return; }
+  if (t.dataset.au === 'rec') {
+    au.rec = t.value;
+    audioMod().then(mod => mod.getSaved(st.id).then(sv => { if (sv) mod.saveAudio(st.id, Object.assign(sv, { rec: au.rec })).catch(() => {}); }));
+    au.player.setShift(audioShift(p));
+    renderAudio(p);
+  }
 }
 
 /* Modo altar: esconde o vídeo, os tons e os desenhos, aumenta a cifra e mantém a tela acesa */
@@ -1299,7 +1463,7 @@ function listIdFor(date) {
 }
 const songIn = (d, id) => songById(id) || (d.newSongs || []).find(s => s.id === id);
 function autoKey(d, so) { return ministerKey(so, d.minister) || so.play || origKey(so) || ''; }
-const blankSong = (title, version) => ({ id: uid('s'), title, version: version || '', play: '', key: '', bpm: null, yt: '', cifra: '', cifraKb: '', keyKb: '', up: 0, keys: {} });
+const blankSong = (title, version) => ({ id: uid('s'), title, version: version || '', play: '', key: '', bpm: null, yt: '', cifra: '', cifraKb: '', keyKb: '', cifraS: '', keyS: '', cifraKbS: '', keyKbS: '', letra: '', up: 0, keys: {} });
 
 function itemFromParsed(d, pi) {
   let so = matchSong(pi.title, pi.version, d.newSongs);
@@ -1574,6 +1738,9 @@ function deleteList(p) {
 
 /* ===== Cadastro de louvor (cifra de violão e de teclado) ===== */
 const CIFRA_PH = 'Cole aqui a cifra, com os acordes na linha de cima:\n\nG                D/F#\nHá uma fonte que não seca';
+const CIFRA_S_PH = 'Opcional. Cole aqui a cifra simplificada de violão (menos acordes, mais fácil de tocar).';
+const CIFRA_KBS_PH = 'Opcional. Cole aqui a cifra simplificada de teclado.';
+const LETRA_PH = 'Opcional. Cole aqui só a letra, para quem canta.\n\n[Refrão]\nGratidão...';
 const CIFRA_KB_PH = 'Opcional. Cole aqui a cifra para teclado (no Cifra Club, escolha o instrumento Teclado).\n\nSe ficar vazio, quem escolher Teclado vê a cifra do violão.';
 function keyOptions(sel, emptyLabel) {
   return `<option value=""${sel ? '' : ' selected'}>${esc(emptyLabel)}</option><optgroup label="Maiores">${MAJOR_KEYS.map(k => `<option${k === sel ? ' selected' : ''}>${k}</option>`).join('')}</optgroup><optgroup label="Menores">${MINOR_KEYS.map(k => `<option${k === sel ? ' selected' : ''}>${k}</option>`).join('')}</optgroup>`;
@@ -1585,12 +1752,11 @@ function openEdit(id, opts) {
   const src = opts.draft || (id ? songById(id) : null);
   const d = src ? clone(src) : Object.assign(blankSong(opts.title || ''), {});
   if (!d.keys) d.keys = {};
-  if (typeof d.cifraKb !== 'string') d.cifraKb = '';
-  if (typeof d.keyKb !== 'string') d.keyKb = '';
+  ['cifraKb', 'keyKb', 'cifraS', 'keyS', 'cifraKbS', 'keyKbS', 'letra'].forEach(f => { if (typeof d[f] !== 'string') d[f] = ''; });
   const isNew = !songById(d.id);
-  d._keyTouched = !!d.key;
-  d._keyKbTouched = !!d.keyKb;
-  d._tab = S.inst === 'kb' ? 'kb' : 'gt';
+  d._kt = { key: !!d.key, keyS: !!d.keyS, keyKb: !!d.keyKb, keyKbS: !!d.keyKbS };
+  d._tab = opts.tab === 'lt' || (!opts.tab && S.letra) ? 'lt' : S.inst === 'kb' ? 'kb' : 'gt';
+  d._var = S.simple && d._tab !== 'lt' && hasSimple(d, d._tab) ? 's' : '';
   const versions = [...new Set(DATA.songs.map(s => s.version).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
   const p = openPanel(`<div class="p-head"><div class="in"><button class="txtbtn" data-act="close">Cancelar</button><b class="p-h">${isNew ? 'Novo louvor' : 'Editar louvor'}</b><button class="btn pri sm" data-act="save">Salvar</button></div></div>
   <div class="p-body"><div class="p-in">
@@ -1601,19 +1767,23 @@ function openEdit(id, opts) {
       <div class="field"><label for="f-bpm">BPM <span class="opt">(opcional)</span></label><input class="inp" id="f-bpm" data-f="bpm" type="number" inputmode="numeric" min="30" max="240" value="${d.bpm || ''}" placeholder="Ex.: 72"></div>
     </div>
     <div class="field"><label for="f-yt">Link do YouTube <span class="opt">(opcional)</span></label><input class="inp" id="f-yt" data-f="yt" type="url" inputmode="url" value="${esc(d.yt)}" placeholder="Cole o link do vídeo" autocomplete="off"><a class="minilink" data-el="yt-search" href="${esc(ytSearch(d.title + ' ' + (d.version || '')))}" target="_blank" rel="noopener">Procurar no YouTube</a></div>
-    <div class="field"><span class="flabel">Cifra</span>
+    <div class="field"><span class="flabel">Cifra e letra</span>
       <div class="seg ctabs" role="tablist" aria-label="Cifra para">
         <button role="tab" id="ct-gt" data-act="ctab" data-v="gt" aria-controls="cp-gt">Violão</button>
         <button role="tab" id="ct-kb" data-act="ctab" data-v="kb" aria-controls="cp-kb">Teclado</button>
+        <button role="tab" id="ct-lt" data-act="ctab" data-v="lt" aria-controls="cp-lt">Letra</button>
       </div>
-      <div class="cpane" id="cp-gt" role="tabpanel" aria-labelledby="ct-gt"><textarea class="inp" id="f-cifra" data-f="cifra" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Cifra para violão" placeholder="${esc(CIFRA_PH)}">${esc(d.cifra)}</textarea></div>
-      <div class="cpane" id="cp-kb" role="tabpanel" aria-labelledby="ct-kb"><textarea class="inp" id="f-cifrakb" data-f="cifraKb" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Cifra para teclado" placeholder="${esc(CIFRA_KB_PH)}">${esc(d.cifraKb)}</textarea></div>
+      <div class="seg sm cvar" data-el="cvar" role="group" aria-label="Versão da cifra"><button data-act="cvar" data-v="">Principal</button><button data-act="cvar" data-v="s">Simplificada</button></div>
+      <div class="cpane" id="cp-gt" role="tabpanel"><textarea class="inp" id="f-cifra" data-f="cifra" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Cifra para violão" placeholder="${esc(CIFRA_PH)}">${esc(d.cifra)}</textarea></div>
+      <div class="cpane" id="cp-gts" role="tabpanel"><textarea class="inp" id="f-cifras" data-f="cifraS" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Cifra simplificada para violão" placeholder="${esc(CIFRA_S_PH)}">${esc(d.cifraS)}</textarea></div>
+      <div class="cpane" id="cp-kb" role="tabpanel"><textarea class="inp" id="f-cifrakb" data-f="cifraKb" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Cifra para teclado" placeholder="${esc(CIFRA_KB_PH)}">${esc(d.cifraKb)}</textarea></div>
+      <div class="cpane" id="cp-kbs" role="tabpanel"><textarea class="inp" id="f-cifrakbs" data-f="cifraKbS" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Cifra simplificada para teclado" placeholder="${esc(CIFRA_KBS_PH)}">${esc(d.cifraKbS)}</textarea></div>
+      <div class="cpane" id="cp-lt" role="tabpanel"><textarea class="inp ltxt" id="f-letra" data-f="letra" spellcheck="true" aria-label="Letra" placeholder="${esc(LETRA_PH)}">${esc(d.letra)}</textarea><button class="linkbtn" data-act="letra-fill" data-el="letrafill">Copiar a letra da cifra para editar</button></div>
       <div class="hint" data-el="detect" aria-live="polite"></div>
       <a class="minilink" data-el="cifra-search" href="#" target="_blank" rel="noopener">Procurar a cifra na internet</a>
     </div>
-    <div class="field"><label for="f-key" data-el="keylabel">Tom em que a cifra está escrita</label>
-      <div class="selw" data-el="key-gt"><select class="inp" id="f-key" data-f="key">${keyOptions(d.key, 'Descobrir pela cifra')}</select></div>
-      <div class="selw" data-el="key-kb"><select class="inp" id="f-keykb" data-f="keyKb">${keyOptions(d.keyKb, 'Descobrir pela cifra')}</select></div>
+    <div class="field" data-el="keyfield"><label for="f-key" data-el="keylabel">Tom em que a cifra está escrita</label>
+      ${Object.keys(SLOTS).map(k => `<div class="selw" data-el="key-${k}"><select class="inp" id="${SLOTS[k].sel}" data-f="${SLOTS[k].key}">${keyOptions(d[SLOTS[k].key], 'Descobrir pela cifra')}</select></div>`).join('')}
     </div>
     <button class="btn pri wide" data-act="save">Salvar louvor</button>
     ${isNew ? '' : '<button class="txtbtn danger" data-act="del" data-confirm="Toque de novo para excluir">Excluir louvor</button>'}
@@ -1624,30 +1794,51 @@ function openEdit(id, opts) {
   setCifraTab(p, d._tab);
   if (!d.title) setTimeout(() => { const t = $('#f-title', p); if (t) t.focus(); }, 60);
 }
-function setCifraTab(p, tab) {
-  const d = p._d, kb = tab === 'kb';
-  d._tab = kb ? 'kb' : 'gt';
+/* campos de cifra: violão e teclado, cada um com principal e simplificada */
+const SLOTS = {
+  gt: { text: 'cifra', key: 'key', sel: 'f-key', label: 'Tom em que a cifra está escrita', empty: 'Pode colar do jeito que vem do Cifra Club: acordes em cima, letra embaixo.' },
+  gts: { text: 'cifraS', key: 'keyS', sel: 'f-keys', label: 'Tom em que a cifra simplificada está escrita', empty: 'Opcional. Cole aqui a cifra simplificada de violão (com menos acordes). Quem escolher "Simplificada" vê esta.' },
+  kb: { text: 'cifraKb', key: 'keyKb', sel: 'f-keykb', label: 'Tom em que a cifra de teclado está escrita', empty: 'Opcional. Se ficar vazio, quem escolher Teclado vê a cifra do violão.' },
+  kbs: { text: 'cifraKbS', key: 'keyKbS', sel: 'f-keykbs', label: 'Tom em que a cifra simplificada de teclado está escrita', empty: 'Opcional. Cole aqui a cifra simplificada de teclado. Quem escolher "Simplificada" vê esta.' }
+};
+const slotOf = d => d._tab === 'lt' ? 'lt' : d._tab + (d._var || '');
+function setCifraTab(p, tab, v) {
+  const d = p._d;
+  d._tab = tab === 'kb' ? 'kb' : tab === 'lt' ? 'lt' : 'gt';
+  if (v !== undefined) d._var = v === 's' ? 's' : '';
+  const slot = slotOf(d), lt = slot === 'lt', kb = d._tab === 'kb';
   $$('[data-act="ctab"]', p).forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === d._tab)));
-  $('#cp-gt', p).hidden = kb;
-  $('#cp-kb', p).hidden = !kb;
-  $('[data-el="key-gt"]', p).hidden = kb;
-  $('[data-el="key-kb"]', p).hidden = !kb;
-  $('[data-el="keylabel"]', p).setAttribute('for', kb ? 'f-keykb' : 'f-key');
-  $('[data-el="keylabel"]', p).textContent = kb ? 'Tom em que a cifra de teclado está escrita' : 'Tom em que a cifra está escrita';
-  $('[data-el="cifra-search"]', p).href = cifraSearch(d, kb);
-  $('[data-el="cifra-search"]', p).textContent = kb ? 'Procurar a cifra de teclado na internet' : 'Procurar a cifra na internet';
+  $('[data-el="cvar"]', p).hidden = lt;
+  $$('[data-act="cvar"]', p).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === (d._var || ''))));
+  ['gt', 'gts', 'kb', 'kbs', 'lt'].forEach(k => { $('#cp-' + k, p).hidden = k !== slot; });
+  Object.keys(SLOTS).forEach(k => { $(`[data-el="key-${k}"]`, p).hidden = k !== slot; });
+  $('[data-el="keyfield"]', p).hidden = lt;
+  if (!lt) {
+    $('[data-el="keylabel"]', p).setAttribute('for', SLOTS[slot].sel);
+    $('[data-el="keylabel"]', p).textContent = SLOTS[slot].label;
+  }
+  const cs = $('[data-el="cifra-search"]', p);
+  cs.hidden = lt;
+  cs.href = cifraSearch(d, kb);
+  cs.textContent = kb ? 'Procurar a cifra de teclado na internet' : 'Procurar a cifra na internet';
   refreshDetect(p);
 }
 function refreshDetect(p) {
-  const d = p._d, kb = d._tab === 'kb', el = $('[data-el="detect"]', p);
-  const text = kb ? d.cifraKb : d.cifra, keyF = kb ? 'keyKb' : 'key', touched = kb ? d._keyKbTouched : d._keyTouched;
-  if (!text || !text.trim()) {
-    el.innerHTML = kb ? 'Opcional. Se ficar vazio, quem escolher Teclado vê a cifra do violão.' : 'Pode colar do jeito que vem do Cifra Club: acordes em cima, letra embaixo.';
+  const d = p._d, slot = slotOf(d), el = $('[data-el="detect"]', p);
+  if (slot === 'lt') {
+    const has = !!(d.letra && d.letra.trim()), auto = lyricsOf(Object.assign({}, d, { letra: '' })).lines.filter(l => l.t === 'ln').length;
+    const fill = $('[data-el="letrafill"]', p);
+    if (fill) fill.hidden = has || !auto;
+    el.innerHTML = has ? 'Quem escolher <b>Letra</b> vê esta letra. Use [Refrão], [Ponte]... numa linha só para separar as partes.'
+      : auto ? `Opcional. Sem letra colada, quem escolher <b>Letra</b> vê a letra tirada da cifra (${auto} linhas), sem os acordes.`
+        : 'Cole aqui a letra para quem canta. Use [Refrão], [Ponte]... numa linha só para separar as partes.';
     return;
   }
+  const S0 = SLOTS[slot], text = d[S0.text], keyF = S0.key;
+  if (!text || !text.trim()) { el.innerHTML = S0.empty; return; }
   const n = countChordLines(text);
   const k = detectKey(text);
-  if (k && !touched && d[keyF] !== k) { d[keyF] = k; const sel = $(kb ? '#f-keykb' : '#f-key', p); if (sel) sel.value = k; }
+  if (k && !d._kt[keyF] && d[keyF] !== k) { d[keyF] = k; const sel = $('#' + S0.sel, p); if (sel) sel.value = k; }
   let h = `${n} ${n === 1 ? 'linha de acordes reconhecida' : 'linhas de acordes reconhecidas'}.`;
   if (k) h += k === d[keyF] ? ` Tom da cifra: <b>${k}</b>.` : ` Pela cifra, o tom parece ser <b>${k}</b>. <button class="linkbtn" data-act="use-key" data-v="${k}">Usar ${k}</button>`;
   else if (!n) h = 'Não achei linhas de acordes. Confira se os acordes estão numa linha só deles, em cima da letra.';
@@ -1658,8 +1849,8 @@ function refreshDetectSoon(p) { clearTimeout(detectT); detectT = setTimeout(() =
 
 const filled = t => !!(t && String(t).trim());
 function cleanSong(d) {
-  const cifra = (d.cifra || '').replace(/\r/g, '').replace(/\s+$/, '');
-  const cifraKb = (d.cifraKb || '').replace(/\r/g, '').replace(/\s+$/, '');
+  const tidy = t => (t || '').replace(/\r/g, '').replace(/\s+$/, '');
+  const cifra = tidy(d.cifra), cifraKb = tidy(d.cifraKb), cifraS = tidy(d.cifraS), cifraKbS = tidy(d.cifraKbS);
   return {
     id: d.id,
     title: (d.title || '').trim(),
@@ -1671,6 +1862,11 @@ function cleanSong(d) {
     cifra,
     cifraKb,
     keyKb: filled(cifraKb) ? (d.keyKb || detectKey(cifraKb) || '') : '',
+    cifraS,
+    keyS: filled(cifraS) ? (d.keyS || detectKey(cifraS) || '') : '',
+    cifraKbS,
+    keyKbS: filled(cifraKbS) ? (d.keyKbS || detectKey(cifraKbS) || '') : '',
+    letra: tidy(d.letra).replace(/^\s*\n/, ''),
     keys: d.keys || {},
     up: Date.now()
   };
@@ -1819,13 +2015,14 @@ document.addEventListener('click', e => {
     case 'exit-stay': closeSheet(); break;
     case 'discard-go': { const t = discardTarget; discardTarget = null; closeSheet(); if (t) removePanel(t); break; }
 
-    case 'key': p._st.key = b.dataset.v; updateSongPanel(p); break;
+    case 'key': p._st.key = b.dataset.v; updateSongPanel(p); audioRetune(p); break;
     case 'day-key': openDayKeySheet(b.dataset.list, +b.dataset.idx); break;
     case 'day-key-set': { const c = sheetEl && sheetEl._ctx; if (c && c.dayKey) setDayKey(c.list, c.idx, b.dataset.v); break; }
     case 'capo': p._st.capo = Math.max(0, Math.min(7, p._st.capo + (+b.dataset.d))); updateSongPanel(p); break;
     case 'capo-set': p._st.capo = +b.dataset.v; updateSongPanel(p); break;
     case 'size': {
       const st = p._st;
+      if (S.letra) { st.lsize = Math.max(14, Math.min(40, st.cur - (st.palco ? 6 : 0) + 2 * (+b.dataset.d))); updateSongPanel(p); break; }
       st.size = Math.max(11, Math.min(30, st.cur - (st.palco ? 4 : 0) + (+b.dataset.d)));
       updateSongPanel(p);
       break;
@@ -1848,16 +2045,26 @@ document.addEventListener('click', e => {
     }
     case 'play-video': playVideo(p); break;
     case 'inst': {
-      S.inst = b.dataset.v === 'kb' ? 'kb' : 'gt';
-      storeSet('localStorage', 'lm-inst', S.inst);
+      if (b.dataset.v === 'lt') S.letra = true;
+      else { S.letra = false; S.inst = b.dataset.v === 'kb' ? 'kb' : 'gt'; storeSet('localStorage', 'lm-inst', S.inst); }
+      storeSet('localStorage', 'lm-letra', S.letra ? '1' : '0');
       stack.forEach(x => { if (x._kind === 'song') updateSongPanel(x); });
       break;
     }
+    case 'var': {
+      S.simple = b.dataset.v === '1';
+      storeSet('localStorage', 'lm-simple', S.simple ? '1' : '0');
+      stack.forEach(x => { if (x._kind === 'song') updateSongPanel(x); });
+      break;
+    }
+    case 'audio': toggleAudio(p); break;
+    case 'a-play': audioPlay(p); break;
+    case 'a-del': audioRemove(p); break;
     case 'toggle-chords': S.chords = !S.chords; storeSet('localStorage', 'lm-chords', S.chords ? '1' : '0'); updateSongPanel(p); break;
     case 'chord': openChordSheet(b.dataset.v); break;
     case 'chord-inst': openChordSheet(b.dataset.c, b.dataset.v); break;
     case 'nav': navSong(p, +b.dataset.d); break;
-    case 'edit': openEdit(b.dataset.id, { ctx: p && p._st ? p._st.ctx : null }); break;
+    case 'edit': openEdit(b.dataset.id, { ctx: p && p._st ? p._st.ctx : null, tab: b.dataset.tab }); break;
 
     case 'show-paste': { const box = $('[data-el="pastebox"]', p); box.classList.remove('closed'); b.remove(); $('#le-paste', p).focus(); break; }
     case 'parse': {
@@ -1977,11 +2184,22 @@ document.addEventListener('click', e => {
 
     case 'ctab': setCifraTab(p, b.dataset.v); break;
     case 'use-key': {
-      const d = p._d, kb = d._tab === 'kb';
-      d[kb ? 'keyKb' : 'key'] = b.dataset.v;
-      d[kb ? '_keyKbTouched' : '_keyTouched'] = true;
-      $(kb ? '#f-keykb' : '#f-key', p).value = b.dataset.v;
+      const d = p._d, S0 = SLOTS[slotOf(d)];
+      if (!S0) break;
+      d[S0.key] = b.dataset.v;
+      d._kt[S0.key] = true;
+      $('#' + S0.sel, p).value = b.dataset.v;
       refreshDetect(p);
+      break;
+    }
+    case 'cvar': setCifraTab(p, p._d._tab, b.dataset.v); break;
+    case 'letra-fill': {
+      const d = p._d, ta = $('#f-letra', p);
+      const lines = lyricsOf(Object.assign({}, d, { letra: '' })).lines;
+      d.letra = lines.map(l => l.t === 'sec' ? '[' + l.text + ']' : l.t === 'blank' ? '' : l.text).join('\n');
+      ta.value = d.letra;
+      refreshDetect(p);
+      ta.focus();
       break;
     }
     case 'save': saveSong(p); break;
@@ -1990,6 +2208,11 @@ document.addEventListener('click', e => {
   }
 });
 
+/* arquivo de áudio escolhido e posição solta no fim do arraste */
+document.addEventListener('change', e => {
+  const t = e.target, p = t && t.closest && t.closest('.panel');
+  if (p && t.dataset && (t.dataset.au === 'file' || t.dataset.au === 'seek')) audioInput(p, t);
+});
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; renderSongs(); return; }
@@ -1998,6 +2221,7 @@ document.addEventListener('input', e => {
   if (t.id === 'g-seed') { const f = $('[data-el="seedf"]'); if (f) f.hidden = !t.checked; gateErr(''); return; }
   const p = t.closest('.panel');
   if (!p) return;
+  if (t.dataset.au) { if (t.dataset.au === 'seek') t._drag = true; else if (t.dataset.au === 'rec') audioInput(p, t); return; }
   if (t.dataset.ac) { acRender(p, t); return; }
   if (t.dataset.l) {
     const d = p._d, f = t.dataset.l;
@@ -2027,9 +2251,8 @@ document.addEventListener('input', e => {
   if (!t.dataset.f) return;
   const d = p._d, f = t.dataset.f;
   d[f] = t.value;
-  if (f === 'key') { d._keyTouched = !!t.value; refreshDetect(p); }
-  if (f === 'keyKb') { d._keyKbTouched = !!t.value; refreshDetect(p); }
-  if (f === 'cifra' || f === 'cifraKb') refreshDetectSoon(p);
+  if (f === 'key' || f === 'keyS' || f === 'keyKb' || f === 'keyKbS') { d._kt[f] = !!t.value; refreshDetect(p); }
+  if (f === 'cifra' || f === 'cifraKb' || f === 'cifraS' || f === 'cifraKbS' || f === 'letra') refreshDetectSoon(p);
   if (f === 'title' || f === 'version') {
     const a = $('[data-el="yt-search"]', p), c = $('[data-el="cifra-search"]', p);
     if (a) a.href = ytSearch(d.title + ' ' + (d.version || ''));
