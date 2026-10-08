@@ -308,6 +308,64 @@ const lastPanel = page => page.locator('.panel').last();
     await lpg.screenshot({ path: path.join(SHOTS, '10-claro-inicio.png') });
     const overflow = await lpg.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     check(!overflow, 'sem rolagem para o lado no celular pequeno');
+
+    /* ----- botão voltar do celular ----- */
+    const back = async () => { await lpg.goBack(); await lpg.waitForTimeout(200); };
+    const panels = () => lpg.locator('.panel').count();
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="open-item"]').first().click();
+    await lpg.waitForSelector('.panel .cifra, .panel [data-el="cifra"]');
+    check(await panels() === 2, 'culto e louvor abertos');
+    await back();
+    check(await panels() === 1 && lpg.url() === BASE, 'voltar fecha só o louvor', [await panels(), lpg.url()]);
+    await back();
+    check(await panels() === 0 && lpg.url() === BASE && await lpg.locator('#app').isVisible(), 'voltar fecha o culto e continua no app', [await panels(), lpg.url()]);
+    /* modo altar: o voltar primeiro sai do modo altar */
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="open-item"]').first().click();
+    await lpg.locator('.panel [data-act="palco"]').last().click();
+    await back();
+    check(await panels() === 2 && await lpg.locator('.panel [data-act="palco"]').last().getAttribute('aria-pressed') === 'false', 'voltar sai do modo altar');
+    await back(); await back();
+    check(await panels() === 0, 'voltar duas vezes fecha tudo');
+    /* editor sem alteração fecha direto; com alteração pergunta */
+    await lpg.click('[data-act="tab"][data-v="louvores"]');
+    await lpg.click('[data-act="new"]');
+    await back();
+    check(await panels() === 0, 'editor sem alteração fecha com voltar');
+    await lpg.click('[data-act="new"]');
+    await lpg.fill('#f-title', 'Rascunho');
+    await back();
+    check(await panels() === 1 && /Sair sem salvar/.test(await lpg.locator('.sheet').textContent()), 'editor com alteração pergunta antes de sair');
+    await lpg.click('[data-act="discard-stay"]');
+    check(await panels() === 1 && await lpg.locator('.sheet').count() === 0 && await lpg.inputValue('#f-title') === 'Rascunho', 'continuar editando mantém o que foi escrito');
+    await back();
+    await back();
+    check(await panels() === 1 && await lpg.locator('.sheet').count() === 0, 'voltar com a pergunta aberta só fecha a pergunta');
+    await back();
+    await lpg.click('[data-act="discard-go"]');
+    await lpg.waitForTimeout(200);
+    check(await panels() === 0 && lpg.url() === BASE, 'sair sem salvar fecha o editor');
+    /* culto novo: colar a escala sem montar também conta como alteração */
+    await lpg.click('[data-act="tab"][data-v="cultos"]');
+    await lpg.click('[data-act="new-list"]');
+    await lpg.fill('#le-paste', '*ESCALA DO DOMINGO DIA 25/10*');
+    await back();
+    check(/Sair sem salvar/.test(await lpg.locator('.sheet').textContent()), 'escala colada pergunta antes de sair');
+    await lpg.click('[data-act="discard-go"]');
+    /* fechar pela seta do app não deixa um voltar "morto" */
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="close"]').click();
+    await lpg.waitForTimeout(200);
+    check(await panels() === 0 && await lpg.evaluate(() => history.state === null), 'seta do app limpa o histórico extra');
+    check(await lpg.locator('.sheet').count() === 0, 'nenhuma janela sobrando');
+    /* link do WhatsApp abre o culto; o voltar fecha e continua no app */
+    const lp9 = await newPage(light, errs);
+    await lp9.goto(BASE + '#l20261009');
+    await lp9.waitForSelector('.panel .hero');
+    await lp9.goBack(); await lp9.waitForTimeout(200);
+    check(await lp9.locator('.panel').count() === 0 && await lp9.locator('#app').isVisible(), 'link do culto: voltar fica no app', lp9.url());
+    await lp9.close();
     await lpg.click('[data-act="tab"][data-v="louvores"]');
     await lpg.click('[data-act="new"]');
     await lpg.fill('#f-title', 'Teste Claro');

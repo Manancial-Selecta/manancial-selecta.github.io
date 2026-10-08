@@ -322,6 +322,57 @@ function closeMenu() {
   if (b) b.setAttribute('aria-expanded', 'false');
 }
 
+/* ===== Botão voltar do celular =====
+   Enquanto houver algo aberto (tela, folha ou menu), fica uma entrada extra no histórico.
+   O voltar do celular consome essa entrada e fecha só o que está por cima, em vez de sair do app. */
+let backGuard = false, backSkip = 0, backQueued = false;
+const backLayers = () => stack.length + (sheetEl ? 1 : 0) + (menuEl ? 1 : 0);
+function syncBack() {
+  backQueued = false;
+  if (backSkip) return; /* esperando o histórico voltar; o popstate chama de novo */
+  const need = backLayers() > 0;
+  try {
+    if (need && !backGuard) { history.pushState({ lmBack: 1 }, '', location.href); backGuard = true; }
+    else if (!need && backGuard) { backGuard = false; backSkip++; history.back(); }
+  } catch (e) { /* navegador sem histórico: segue sem o voltar do celular */ }
+}
+function queueSyncBack() { if (!backQueued) { backQueued = true; Promise.resolve().then(syncBack); } }
+/* editor com alteração não salva? */
+const sigOf = d => JSON.stringify(d, (k, v) => (k && k[0] === '_' ? undefined : v));
+function editorDirty(p) {
+  if (!p || (p._kind !== 'form' && p._kind !== 'listedit')) return false;
+  const paste = $('#le-paste', p);
+  if (paste && paste.value.trim() && !$('[data-el="pastebox"]', p).classList.contains('closed')) return true;
+  return !!p._snap && sigOf(p._d) !== p._snap;
+}
+let discardTarget = null;
+function goBack() {
+  if (menuEl) { closeMenu(); return; }
+  if (sheetEl) { closeSheet(); return; }
+  const p = topPanel();
+  if (!p) return;
+  if (p._kind === 'song' && p._st.palco) { togglePalco(p); return; }
+  if (editorDirty(p)) {
+    discardTarget = p;
+    openSheet(`<h3>Sair sem salvar?</h3><p>As alterações que você fez ainda não foram salvas.</p>
+      <div class="sbtns"><button class="btn" data-act="discard-stay">Continuar editando</button><button class="btn danger" data-act="discard-go">Sair sem salvar</button></div>`);
+    return;
+  }
+  removePanel(p);
+}
+window.addEventListener('popstate', () => {
+  if (backSkip) { backSkip--; queueSyncBack(); return; }
+  backGuard = false;
+  goBack();
+  queueSyncBack();
+});
+new MutationObserver(queueSyncBack).observe(document.body, { childList: true });
+/* guarda como o editor estava antes da primeira mexida */
+['input', 'change', 'click'].forEach(t => document.addEventListener(t, e => {
+  const p = e.target && e.target.closest && e.target.closest('.panel');
+  if (p && p._d && !p._snap && (p._kind === 'form' || p._kind === 'listedit')) p._snap = sigOf(p._d);
+}, true));
+
 /* ===== Entrar (código do ministério + nome) e configurar ===== */
 const MSG = {
   'bad-code': 'Código errado. Confira com a liderança do ministério.',
@@ -1517,6 +1568,8 @@ document.addEventListener('click', e => {
     }
     case 'reh-clear': { const ctx = sheetEl && sheetEl._ctx; if (ctx && ctx.list) saveListPatch(ctx.list, { reh: null }, 'Ensaio removido'); break; }
     case 'close': if (p) removePanel(p); break;
+    case 'discard-stay': closeSheet(); break;
+    case 'discard-go': { const t = discardTarget; discardTarget = null; closeSheet(); if (t) removePanel(t); break; }
 
     case 'key': p._st.key = b.dataset.v; updateSongPanel(p); break;
     case 'capo': p._st.capo = Math.max(0, Math.min(7, p._st.capo + (+b.dataset.d))); updateSongPanel(p); break;
@@ -1732,11 +1785,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'g-code') { e.preventDefault(); const n = $('#g-name'); if (n) n.focus(); return; }
   if (e.key === 'Enter' && id === 'g-name') { e.preventDefault(); const b = $('[data-act="g-join"], [data-act="g-setup"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'rn-name') { e.preventDefault(); const b = $('[data-act="rename-go"]'); if (b) b.click(); return; }
-  if (e.key === 'Escape') {
-    if (menuEl) closeMenu();
-    else if (sheetEl) closeSheet();
-    else if (stack.length) closePanel();
-  }
+  if (e.key === 'Escape') goBack();
 });
 
 window.addEventListener('resize', () => { closeMenu(); stack.forEach(p => { if (p._kind === 'song') fitCifra(p); }); });
