@@ -4,7 +4,7 @@
    - Ao abrir, só baixa o que mudou desde a última vez (economiza a cota gratuita).
    - O que alguém altera aparece na hora para todos. */
 import { normSong, normList, normMeta, fromPrototype, songDoc, listDoc, sameJSON } from './model.js';
-import { storeGet, storeSet, storeDel } from './util.js';
+import { storeGet, storeSet, storeDel, today } from './util.js';
 import { normCode } from './store-local.js';
 
 export const FIREBASE_VERSION = '12.19.0';
@@ -14,6 +14,8 @@ export const FIREBASE_URLS = ['firebase-app.js', 'firebase-auth.js', 'firebase-f
 const ME_KEY = 'lm-me';
 const SYNC_KEY = col => 'lm-sync-' + col;
 const COUNT_KEY = 'lm-sync-count';
+const OPEN_KEY = 'lm-log-open';
+const DAY = 864e5;
 const err = (code, cause) => Object.assign(new Error(code), { code, cause });
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(err('timeout')), ms))]);
 
@@ -126,7 +128,8 @@ export function createFirebaseStore(cfg) {
           return;
         }
         const d = snap.data() || {};
-        const nm = { uid: uid0, name: d.name || me.name, admin: !!d.admin };
+        /* "administrador" só vale depois que o servidor confirmar (senha errada não pisca como administrador) */
+        const nm = { uid: uid0, name: d.name || me.name, admin: snap.metadata.hasPendingWrites ? me.admin : !!d.admin };
         if (nm.name !== me.name || nm.admin !== me.admin) { saveMe(nm); changed.add('me'); flush(true); }
       }, onListenError));
     }
@@ -225,6 +228,14 @@ export function createFirebaseStore(cfg) {
     return writes.length ? runWrites(writes) : Promise.resolve();
   }
 
+  /* ----- histórico: quem abriu o app e o que foi alterado (só o administrador lê) ----- */
+  function writeLog(t, what) {
+    if (!me || !db) return Promise.resolve();
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    return F.setDoc(F.doc(db, 'log', id), { uid: me.uid, by: String(me.name || '').slice(0, 60), t, what: String(what || '').slice(0, 300), at: F.serverTimestamp() })
+      .catch(e => console.warn('histórico', e && e.code));
+  }
+
   return {
     mode: 'firebase',
     async init() {
@@ -276,6 +287,8 @@ export function createFirebaseStore(cfg) {
         throw err(e && e.code === 'timeout' ? 'offline' : 'unknown', e);
       }
       saveMe({ uid: user.uid, name, admin: false });
+      storeSet('localStorage', OPEN_KEY, today());
+      writeLog('join', 'Entrou no app pela primeira vez');
       status.revoked = false;
       try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ok */ }
       start();
@@ -325,10 +338,63 @@ export function createFirebaseStore(cfg) {
       b.set(F.doc(db, 'config', 'access'), { code: c, by: me.uid, at: F.serverTimestamp() });
       b.set(F.doc(db, 'members', me.uid), { code: c }, { merge: true });
       try { await withTimeout(b.commit(), 20000); } catch (e) { throw err(e && e.code === 'timeout' ? 'offline' : (e && e.code) || 'unknown', e); }
+      writeLog('edit', 'Mudou o código do ministério');
     },
     async importSeed(raw) {
       const d = fromPrototype(raw);
+      writeLog('edit', 'Importou os dados do protótipo');
       return commit({ songs: d.songs, lists: d.lists, people: d.meta.people, reh: d.meta.prefs.reh });
+    },
+    log: what => writeLog('edit', what),
+    logOpen() {
+      if (!me || storeGet('localStorage', OPEN_KEY) === today()) return;
+      storeSet('localStorage', OPEN_KEY, today());
+      writeLog('open', 'Abriu o app');
+    },
+    async history(days) {
+      const from = F.Timestamp.fromMillis(Date.now() - days * DAY);
+      let snap;
+      try { snap = await withTimeout(F.getDocs(F.query(F.collection(db, 'log'), F.where('at', '>', from))), 20000); } catch (e) {
+        throw err(e && e.code === 'permission-denied' ? 'not-admin' : (e && e.code === 'timeout') || navigator.onLine === false ? 'offline' : 'unknown', e);
+      }
+      const out = [];
+      snap.forEach(d => { const x = d.data({ serverTimestamps: 'estimate' }) || {}; out.push({ id: d.id, at: x.at && x.at.toMillis ? x.at.toMillis() : 0, by: x.by || '', uid: x.uid || '', t: x.t || 'edit', what: x.what || '' }); });
+      out.sort((a, b) => b.at - a.at);
+      /* o que passou de 8 dias é apagado (não precisa ficar guardado) */
+      F.getDocs(F.query(F.collection(db, 'log'), F.where('at', '<', F.Timestamp.fromMillis(Date.now() - 8 * DAY)))).then(old => {
+        const ids = [];
+        old.forEach(d => ids.push(d.id));
+        for (let i = 0; i < ids.length && i < 200; i += 10) {
+          const b = F.writeBatch(db);
+          ids.slice(i, i + 10).forEach(id => b.delete(F.doc(db, 'log', id)));
+          b.commit().catch(() => {});
+        }
+      }).catch(() => {});
+      return out;
+    },
+    /* ----- senha de administrador: quem souber vira administrador pelo próprio app ----- */
+    async adminPass() {
+      if (!me) return null;
+      try { const s = await F.getDoc(F.doc(db, 'config', 'admin')); return s.exists() ? s.data().pass || null : ''; } catch (e) { return null; }
+    },
+    async setAdminPass(pass) {
+      const c = normCode(pass);
+      if (c.length < 6) throw err('short-pass');
+      const b = F.writeBatch(db);
+      b.set(F.doc(db, 'config', 'admin'), { pass: c, by: me.uid, at: F.serverTimestamp() });
+      b.set(F.doc(db, 'members', me.uid), { adminPass: c }, { merge: true });
+      try { await withTimeout(b.commit(), 20000); } catch (e) { throw err(e && e.code === 'timeout' ? 'offline' : (e && e.code) || 'unknown', e); }
+      writeLog('edit', 'Mudou a senha de administrador');
+    },
+    async becomeAdmin(pass) {
+      const c = normCode(pass);
+      if (!c) throw err('bad-pass');
+      if (navigator.onLine === false) throw err('offline');
+      try { await withTimeout(F.setDoc(F.doc(db, 'members', me.uid), { admin: true, adminPass: c }, { merge: true }), 20000); } catch (e) {
+        throw err(e && e.code === 'permission-denied' ? 'bad-pass' : e && e.code === 'timeout' ? 'offline' : 'unknown', e);
+      }
+      saveMe(Object.assign({}, me, { admin: true }));
+      writeLog('edit', 'Entrou como administrador');
     },
     commit
   };

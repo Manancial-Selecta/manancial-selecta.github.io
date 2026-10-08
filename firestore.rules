@@ -4,17 +4,22 @@ rules_version = '2';
 // - Só quem entrou com o código do ministério (membro) lê e edita louvores e cultos.
 // - O código fica guardado em config/access, que ninguém lê pelo app: só estas regras conferem.
 // - A primeira pessoa a configurar (tela #setup) vira administradora e escolhe o código.
+// - Quem administra pode criar uma senha de administrador (config/admin, ninguém lê pelo app);
+//   quem souber a senha vira administrador pelo próprio app.
+// - Histórico (log): todos os membros registram; só quem administra lê.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
     function memberPath() { return /databases/$(database)/documents/members/$(request.auth.uid); }
     function accessPath() { return /databases/$(database)/documents/config/access; }
+    function adminPath() { return /databases/$(database)/documents/config/admin; }
     function isMember() { return signedIn() && exists(memberPath()); }
     function isAdmin() { return isMember() && get(memberPath()).data.admin == true; }
     function adminAfter() { return signedIn() && existsAfter(memberPath()) && getAfter(memberPath()).data.admin == true; }
     function validName(n) { return n is string && n.size() > 0 && n.size() <= 60; }
     function validCode(c) { return c is string && c.size() >= 6 && c.size() <= 60; }
+    function validPass(c) { return c is string && c.size() >= 6 && c.size() <= 60; }
 
     // código do ministério
     match /config/access {
@@ -22,6 +27,13 @@ service cloud.firestore {
       allow create: if signedIn() && !exists(accessPath()) && adminAfter()
         && validCode(request.resource.data.code) && request.resource.data.by == request.auth.uid;
       allow update: if isAdmin() && validCode(request.resource.data.code);
+      allow delete: if false;
+    }
+
+    // senha de administrador
+    match /config/admin {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && validPass(request.resource.data.pass) && request.resource.data.by == request.auth.uid;
       allow delete: if false;
     }
 
@@ -49,11 +61,35 @@ service cloud.firestore {
             && existsAfter(accessPath()) && getAfter(accessPath()).data.code == request.resource.data.code)
         );
       allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'code', 'admin', 'at', 'adminPass'])
         && validName(request.resource.data.name)
-        && request.resource.data.admin == resource.data.admin
-        && (request.resource.data.code == resource.data.code
-          || (resource.data.admin == true && request.resource.data.code == getAfter(accessPath()).data.code));
+        && (
+          // trocar o nome; quem administra troca também o código ou a senha (junto com config)
+          (request.resource.data.admin == resource.data.admin
+            && (request.resource.data.code == resource.data.code
+              || (resource.data.admin == true && request.resource.data.code == getAfter(accessPath()).data.code))
+            && (request.resource.data.get('adminPass', '') == resource.data.get('adminPass', '')
+              || (resource.data.admin == true && request.resource.data.adminPass == getAfter(adminPath()).data.pass)))
+          ||
+          // virar administrador com a senha
+          (resource.data.admin == false && request.resource.data.admin == true
+            && request.resource.data.code == resource.data.code
+            && exists(adminPath()) && request.resource.data.adminPass == get(adminPath()).data.pass)
+        );
       allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // histórico: cada membro registra o que fez; só quem administra lê e apaga
+    match /log/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['uid', 'by', 't', 'what', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.by == get(memberPath()).data.name
+        && request.resource.data.what is string && request.resource.data.what.size() <= 300
+        && request.resource.data.t in ['open', 'edit', 'join']
+        && request.resource.data.at == request.time;
+      allow update: if false;
     }
 
     // louvores, cultos e preferências: todos os membros leem e editam

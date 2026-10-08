@@ -57,8 +57,9 @@ function canRead(db, path) {
   const u = uidNow();
   if (!u) return false;
   const [col, id] = path.split('/');
-  if (col === 'config') return id === 'public';
+  if (col === 'config') return id === 'public' || (id === 'admin' && member(db, u) && db['members/' + u].admin === true);
   if (col === 'members') return id === u; /* cada pessoa lê só a própria entrada */
+  if (col === 'log') return member(db, u) && db['members/' + u].admin === true;
   return member(db, u);
 }
 function canWrite(before, after, path, u) {
@@ -70,6 +71,13 @@ function canWrite(before, after, path, u) {
     return member(before, u) && before['members/' + u].admin === true && typeof nd.code === 'string' && nd.code.length >= 6;
   }
   if (col === 'config' && id === 'public') return !!(after['members/' + u] && after['members/' + u].admin === true);
+  if (col === 'config' && id === 'admin') return member(before, u) && before['members/' + u].admin === true && typeof nd.pass === 'string' && nd.pass.length >= 6 && nd.by === u;
+  if (col === 'log') {
+    if (!nd) return member(before, u) && before['members/' + u].admin === true; /* apagar */
+    if (before[path]) return false;
+    return member(before, u) && nd.uid === u && Object.keys(nd).every(k => ['uid', 'by', 't', 'what', 'at'].includes(k))
+      && nd.by === before['members/' + u].name && typeof nd.what === 'string' && nd.what.length <= 300 && ['open', 'edit', 'join'].includes(nd.t) && !!(nd.at && nd.at.__ts);
+  }
   if (col === 'members') {
     if (id !== u) return false;
     if (!nd || typeof nd.name !== 'string' || !nd.name || nd.name.length > 60) return false;
@@ -80,7 +88,13 @@ function canWrite(before, after, path, u) {
       if (acc) return nd.admin === false && nd.code === acc.code;
       return nd.admin === true && !!after['config/access'] && after['config/access'].code === nd.code;
     }
-    return nd.admin === old.admin && (nd.code === old.code || (old.admin === true && nd.code === (after['config/access'] || {}).code));
+    if (!Object.keys(nd).every(k => ['name', 'code', 'admin', 'at', 'adminPass'].includes(k))) return false;
+    const passAfter = (after['config/admin'] || {}).pass, passBefore = (before['config/admin'] || {}).pass;
+    const same = nd.admin === old.admin
+      && (nd.code === old.code || (old.admin === true && nd.code === (after['config/access'] || {}).code))
+      && ((nd.adminPass || '') === (old.adminPass || '') || (old.admin === true && nd.adminPass === passAfter));
+    const promote = old.admin === false && nd.admin === true && nd.code === old.code && passBefore !== undefined && nd.adminPass === passBefore;
+    return same || promote;
   }
   return member(before, u);
 }
@@ -113,7 +127,7 @@ async function commitWrites(writes) {
   const now = lastTs = Math.max(Date.now(), lastTs + 1, (before.__last || 0) + 1);
   after.__last = now;
   after.__v = (before.__v || 0) + 1;
-  writes.forEach(w => { const data = resolve(w.data, now); after[w.path] = w.merge ? merge(after[w.path], data) : merge({}, data); });
+  writes.forEach(w => { if (w.del) { delete after[w.path]; return; } const data = resolve(w.data, now); after[w.path] = w.merge ? merge(after[w.path], data) : merge({}, data); });
   const u = uidNow();
   for (const w of writes) if (!canWrite(before, after, w.path, u)) throw denied();
   save(after);
@@ -126,6 +140,7 @@ export function writeBatch() {
   const writes = [];
   return {
     set(ref, data, opts) { writes.push({ path: ref.path, data, merge: !!(opts && opts.merge) }); return this; },
+    delete(ref) { writes.push({ path: ref.path, del: true }); return this; },
     commit() { return commitWrites(writes); }
   };
 }
@@ -163,7 +178,17 @@ export async function getDocsFromCache(c) {
   Object.keys(all).forEach(p => { if (p.startsWith(c.col + '/') && all[p]) out.push(snap({ path: p, id: p.split('/')[1] }, all[p], true)); });
   return { size: out.length, docs: out, forEach: fn => out.forEach(fn) };
 }
-const matches = (d, filters) => (filters || []).every(f => f.field === 'at' && f.op === '>' ? !!(d && d.at && d.at.__ts > f.value.ms) : true);
+const matches = (d, filters) => (filters || []).every(f => f.field === 'at' && f.op === '>' ? !!(d && d.at && d.at.__ts > f.value.ms) : f.field === 'at' && f.op === '<' ? !!(d && d.at && d.at.__ts < f.value.ms) : true);
+export async function getDocs(q) {
+  if (window.__mockOffline) throw Object.assign(new Error('offline'), { code: 'unavailable' });
+  await tick();
+  const db = load();
+  if (!canRead(db, q.col + '/x')) throw denied();
+  const out = [];
+  Object.keys(db).forEach(p => { if (p.startsWith(q.col + '/') && db[p] && matches(db[p], q.filters)) out.push(snap({ path: p, id: p.split('/')[1] }, db[p])); });
+  window.__mockReads += Math.max(1, out.length);
+  return { size: out.length, docs: out, forEach: fn => out.forEach(fn) };
+}
 export function onSnapshot(target, a, b, c) {
   let next, error;
   if (typeof a === 'function') { next = a; error = b; } else { next = b; error = c; }

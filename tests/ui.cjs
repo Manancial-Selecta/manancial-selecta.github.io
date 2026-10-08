@@ -43,6 +43,11 @@ async function newPage(ctx, errs) {
 }
 const vis = async (page, sel) => page.locator(sel).first().isVisible().catch(() => false);
 const lastPanel = page => page.locator('.panel').last();
+async function until(fn, ms) {
+  const end = Date.now() + (ms || 4000);
+  while (Date.now() < end) { try { if (await fn()) return true; } catch (e) { /* tenta de novo */ } await new Promise(r => setTimeout(r, 80)); }
+  return false;
+}
 
 (async () => {
   async function backSuite(lpg, light, mode) {
@@ -392,6 +397,42 @@ const lastPanel = page => page.locator('.panel').last();
     const overflow = await lpg.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     check(!overflow, 'sem rolagem para o lado no celular pequeno');
 
+    /* ----- menu: enviar o app no WhatsApp (sem o código) ----- */
+    await lpg.click('#me-btn');
+    const share = await lpg.locator('.menu [data-act="share-app"]').getAttribute('href');
+    const shareTxt = decodeURIComponent(share.replace('https://wa.me/?text=', ''));
+    check(share.startsWith('https://wa.me/?text=') && shareTxt.includes(BASE) && !/\bmanancial\b/.test(shareTxt), 'link do app para o WhatsApp, sem o código', shareTxt);
+    check(await lpg.locator('.menu [data-act="become-admin"]').count() === 1, 'membro vê entrar como administrador');
+    await lpg.keyboard.press('Escape');
+    await lpg.waitForTimeout(150);
+    /* ----- setinhas na página do culto e no editor ----- */
+    await lpg.click('.lcard.next');
+    const tt = () => lpg.locator('.panel .items .srow b').allTextContents();
+    const o0 = await tt();
+    check(await lpg.locator('.panel [data-act="mv-group"][data-d="-1"]').first().isDisabled(), 'primeiro louvor não sobe');
+    await lpg.locator('.panel [data-act="mv-group"][data-d="1"]').first().click();
+    check(await until(async () => { const t = await tt(); return t[0] === o0[1] && t[1] === o0[0]; }), 'setinha muda a ordem no culto', o0);
+    await lpg.locator('.panel [data-act="edit-list"]').first().click();
+    const et = () => lpg.locator('.panel .erow .et b').allTextContents();
+    const e0 = await et();
+    await lpg.locator('.panel [data-act="mv-item"][data-d="-1"]').nth(1).click();
+    check(await until(async () => { const t = await et(); return t[0] === e0[1] && t[1] === e0[0]; }), 'setinha muda a ordem no editor', e0);
+    await lpg.locator('.panel [data-act="save-list"]').first().click();
+    check(await until(async () => (await tt())[0] === o0[0]), 'ordem do editor salva no culto');
+    check(await lpg.locator('.panel .pill.pri[data-act="edit-list"]').count() === 1, 'botão Editar amarelo');
+    /* tom: vale para todos, com desfazer */
+    await lpg.locator('.panel [data-act="open-item"]').nth(1).click();
+    await lpg.locator('.panel .kchip').first().waitFor();
+    const pk = async () => (await lpg.locator('.panel .kchip[aria-pressed="true"]').count()) ? (await lpg.locator('.panel .kchip[aria-pressed="true"]').textContent()).trim() : '';
+    const kA = await pk(), kB = kA === 'C' ? 'D' : 'C';
+    await lpg.locator('.panel .kchip', { hasText: new RegExp('^' + kB + '$') }).first().click();
+    check(await until(async () => (await pk()) === kB) && /para todos/.test(await lpg.locator('#toast').textContent()), 'tom muda para todos', [kA, kB]);
+    await lpg.click('[data-act="toast-act"]');
+    check(await until(async () => (await pk()) === kA), 'desfazer volta o tom', kA);
+    await lpg.locator('.panel [data-act="close"]').last().click();
+    await lpg.waitForTimeout(200);
+    await lpg.locator('.panel [data-act="close"]').last().click();
+    await lpg.waitForTimeout(200);
     await backSuite(lpg, light, 'cw');
     const hist = await browser.newContext({ viewport: { width: 360, height: 740 }, serviceWorkers: 'block' });
     await hist.addInitScript(() => { delete window.CloseWatcher; });

@@ -60,7 +60,7 @@ function matchSong(title, version, extra) {
 }
 
 /* ===== Gravar: aparece na hora e vai para todos ===== */
-function apply(ops) {
+function apply(ops, log) {
   const changed = new Set();
   ['songs', 'lists'].forEach(k => (ops[k] || []).forEach(x => changed.add(x.id)));
   ['delSongs', 'delLists'].forEach(k => (ops[k] || []).forEach(id => changed.add(id)));
@@ -69,6 +69,24 @@ function apply(ops) {
   buildIndex();
   renderAll();
   stack.slice().forEach(p => refreshPanel(p, { changed, remote: false }));
+  if (log && log.what) logChange(log.what, log.merge);
+}
+/* histórico (só o administrador vê): toques repetidos seguidos viram uma linha só */
+const logWait = new Map();
+function logChange(what, merge) {
+  if (!STORE || !STORE.log) return;
+  const k = merge || what;
+  const w = logWait.get(k);
+  if (w) clearTimeout(w.t);
+  const entry = { what, t: setTimeout(() => { logWait.delete(k); STORE.log(what); }, merge ? 2500 : 0) };
+  logWait.set(k, entry);
+}
+function flushLog() { logWait.forEach(w => { clearTimeout(w.t); if (STORE && STORE.log) STORE.log(w.what); }); logWait.clear(); }
+window.addEventListener('pagehide', flushLog);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flushLog(); });
+function cultoLabel(l) {
+  const n = cultoName(l), w = wd(l.date).toLowerCase() + ' ' + dm(l.date);
+  return n ? n + ' (' + w + ')' : 'culto de ' + w;
 }
 
 /* ===== Abertos por último (só neste aparelho) ===== */
@@ -417,7 +435,10 @@ const MSG = {
   'short-code': 'O código precisa ter pelo menos 6 letras ou números.',
   'load': 'Não deu para carregar o app. Confira a internet e tente de novo.',
   'seed': 'Escolha o arquivo do protótipo (prototipo.json) ou desmarque a opção.',
-  'seed-file': 'Esse arquivo não é o do protótipo. Escolha o prototipo.json.'
+  'seed-file': 'Esse arquivo não é o do protótipo. Escolha o prototipo.json.',
+  'short-pass': 'A senha precisa ter pelo menos 6 letras ou números.',
+  'bad-pass': 'Senha errada, ou o administrador ainda não criou a senha.',
+  'not-admin': 'Só quem administra pode ver o histórico.'
 };
 const errMsg = e => MSG[e && e.code] || 'Não deu certo agora. Tente de novo em instantes.';
 
@@ -532,6 +553,7 @@ function enterApp() {
   $('#tabbar').hidden = false;
   S.ready = true;
   queueSyncBack();
+  try { if (STORE.logOpen) STORE.logOpen(); } catch (e) { /* histórico é opcional */ }
   DATA = STORE.view();
   if (!UNSUB) UNSUB = STORE.subscribe(onData);
   if (DATA.lists.length && !upcomingLists().length) S.tab = 'louvores';
@@ -550,8 +572,14 @@ function openMeMenu() {
   w.innerHTML = `<div class="menu" role="menu" aria-label="Conta">
     <div class="mhead"><span class="av">${esc(initials(n))}</span><span class="mtx"><b>${esc(n)}</b><small>${isAdmin() ? 'Administrador' : 'Membro do ministério'} · pode editar tudo</small></span></div>
     <button role="menuitem" data-act="rename">${ICON.edit}Trocar meu nome</button>
+    <a role="menuitem" href="${esc(appShareLink())}" target="_blank" rel="noopener" data-act="share-app">${ICON.whats}Enviar o app no WhatsApp</a>
     ${isStandalone() ? '' : `<button role="menuitem" data-act="install">${ICON.install}Instalar o app</button>`}
-    ${isAdmin() ? `<button role="menuitem" data-act="code">${ICON.keyic}Código do ministério</button><button role="menuitem" data-act="import">${ICON.upload}Importar dados do protótipo</button>` : ''}
+    ${isAdmin() ? `<div class="msep">Administração</div>
+      <button role="menuitem" data-act="history">${ICON.hist}Histórico (7 dias)</button>
+      <button role="menuitem" data-act="code">${ICON.keyic}Código do ministério</button>
+      <button role="menuitem" data-act="admin-pass">${ICON.shield}Senha de administrador</button>
+      <button role="menuitem" data-act="import">${ICON.upload}Importar dados do protótipo</button>`
+    : `<button role="menuitem" data-act="become-admin">${ICON.shield}Entrar como administrador</button>`}
     <button role="menuitem" data-act="leave">${ICON.logout}Sair deste aparelho</button>
   </div>`;
   w.addEventListener('click', e => { if (e.target === w) closeMenu(); });
@@ -614,6 +642,98 @@ async function doChangeCode(btn) {
   closeSheet();
   toast('Código alterado');
 }
+/* link do app para mandar a quem vai entrar (sem o código: a pessoa pede para a liderança) */
+function appShareLink() {
+  const t = '*Louvores Manancial* 🎶\nApp do ministério Adoração & Artes Manancial Selecta: cultos, louvores e cifras para violão e teclado.\n\n'
+    + 'Abra o link, digite o código do ministério (peça para a liderança) e o seu nome. Depois é só instalar na tela inicial.\n\n' + appUrl();
+  return 'https://wa.me/?text=' + encodeURIComponent(t);
+}
+/* senha de administrador: quem administra cria; quem souber vira administrador */
+async function openAdminPass() {
+  openSheet(`<h3>Senha de administrador</h3><p>Quem souber esta senha vira administrador pelo menu, sem mexer no Firebase.</p>
+    <div class="codebox" data-el="pass">…</div>
+    <div class="field"><label for="ap-new">${'Nova senha'}</label><input class="inp" id="ap-new" maxlength="60" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Pelo menos 6 letras ou números"></div>
+    <p class="hint mt">Passe a senha só para quem vai administrar. Quem já é administrador continua sendo.</p>
+    <p class="gerr" role="alert" hidden></p>
+    <button class="btn pri wide" data-act="admin-pass-go">Salvar senha</button>`);
+  const c = await STORE.adminPass();
+  const box = sheetEl && $('[data-el="pass"]', sheetEl);
+  if (box) { box.textContent = c === null ? 'Sem internet para mostrar agora' : c || 'Ainda sem senha'; box.classList.toggle('none', !c); }
+}
+async function doAdminPass(btn) {
+  const c = $('#ap-new').value;
+  if (c.trim().length < 6) { gateErr(MSG['short-pass']); return; }
+  busy(btn, 'Salvando…');
+  try { await STORE.setAdminPass(c); } catch (e) { busy(btn, false); gateErr(errMsg(e)); return; }
+  closeSheet();
+  toast('Senha de administrador salva');
+}
+function openBecomeAdmin() {
+  openSheet(`<h3>Entrar como administrador</h3><p>Digite a senha de administrador que a liderança passou.</p>
+    <div class="field"><label for="ba-pass">Senha</label><input class="inp" id="ba-pass" maxlength="60" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+    <p class="gerr" role="alert" hidden></p>
+    <button class="btn pri wide" data-act="become-admin-go">Entrar como administrador</button>`);
+  const i = $('#ba-pass');
+  if (i) i.focus();
+}
+async function doBecomeAdmin(btn) {
+  const c = $('#ba-pass').value;
+  if (!c.trim()) { gateErr('Digite a senha.'); return; }
+  busy(btn, 'Conferindo…');
+  try { await STORE.becomeAdmin(c); } catch (e) { busy(btn, false); gateErr(e && e.code === 'offline' ? 'Sem internet. Conecte-se e tente de novo.' : errMsg(e)); return; }
+  closeSheet();
+  toast('Pronto! Agora você é administrador.');
+}
+
+/* histórico dos últimos 7 dias: quem abriu o app e o que foi alterado (só o administrador) */
+const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+function dayLabel(ms) {
+  const iso = isoOf(new Date(ms)), t = today();
+  if (iso === t) return 'Hoje';
+  if (daysBetween(iso, t) === 1) return 'Ontem';
+  return wd(iso) + ', ' + dm(iso);
+}
+async function openHistory() {
+  const p = openPanel(`<div class="p-head"><div class="in"><button class="backbtn" data-act="close">${ICON.back}<span>Voltar</span></button></div></div>
+    <div class="p-body"><div class="p-in" data-el="hist"><p class="hint">Carregando…</p></div></div>`, 'histp');
+  p._kind = 'hist';
+  let rows;
+  try { rows = await STORE.history(7); } catch (e) {
+    const el = $('[data-el="hist"]', p);
+    if (el) el.innerHTML = `<p class="note bad">${ICON.info}<span>${esc(e && e.code === 'offline' ? 'Sem internet. O histórico precisa de internet.' : errMsg(e))}</span></p>`;
+    return;
+  }
+  const el = $('[data-el="hist"]', p);
+  if (el) el.innerHTML = historyHTML(rows);
+}
+function historyHTML(rows) {
+  /* quem abriu: uma linha por pessoa, com a última vez e em quantos dias abriu */
+  const people = new Map();
+  rows.filter(r => r.t === 'open' || r.t === 'join').forEach(r => {
+    const k = r.uid || r.by;
+    const e = people.get(k) || { by: r.by, last: 0, days: new Set() };
+    e.last = Math.max(e.last, r.at);
+    e.days.add(isoOf(new Date(r.at)));
+    if (r.at >= e.last) e.by = r.by;
+    people.set(k, e);
+  });
+  const ppl = [...people.values()].sort((a, b) => b.last - a.last);
+  const edits = rows.filter(r => r.t !== 'open');
+  let h = `<h1 class="ptitle">Histórico</h1><p class="hint">Últimos 7 dias. Só quem administra vê esta tela.</p>`;
+  h += `<div class="esec"><h2>Quem abriu o app</h2><span>${ppl.length ? ppl.length + (ppl.length === 1 ? ' pessoa' : ' pessoas') : ''}</span></div>`;
+  h += ppl.length ? '<ul class="hlist">' + ppl.map(e => `<li><span class="av sm">${esc(initials(e.by))}</span><span class="ht"><b>${esc(e.by)}</b><small>${esc(dayLabel(e.last))} às ${hhmm(e.last)} · ${e.days.size === 1 ? '1 dia' : e.days.size + ' dias'}</small></span></li>`).join('') + '</ul>'
+    : '<p class="emptyline">Ninguém abriu o app nestes dias (ou ainda não havia histórico).</p>';
+  h += `<div class="esec"><h2>Alterações</h2><span>${edits.length ? edits.length : ''}</span></div>`;
+  if (!edits.length) return h + '<p class="emptyline">Nenhuma alteração nestes dias.</p>';
+  let cur = '';
+  h += '<div class="hfeed">';
+  edits.forEach(r => {
+    const d = dayLabel(r.at);
+    if (d !== cur) { cur = d; h += `<div class="subsec">${esc(d)}</div>`; }
+    h += `<div class="hrow"><span class="hm">${hhmm(r.at)}</span><span class="ht"><b>${esc(r.by)}</b><span>${esc(r.what)}</span></span></div>`;
+  });
+  return h + '</div>';
+}
 function openImport() {
   openSheet(`<h3>Importar dados do protótipo</h3><p>Traz os louvores e cultos do protótipo para o app. O que tiver o mesmo nome no app é trocado pela versão do protótipo.</p>
     ${CFG.seed ? '' : seedFileHTML()}
@@ -657,6 +777,22 @@ function itemRowHTML(l, it, num, idx, joined) {
     ${it.key ? `<span class="kmini">${esc(it.key)}</span>` : '<span class="kmini none" aria-label="Sem tom">—</span>'}
   </button>`;
 }
+/* setinhas para mudar a ordem (página do culto e editor) */
+function mvHTML(act, i, n, extra, so) {
+  const t = so ? esc(so.title) : '';
+  return `<div class="mv"><button data-act="${act}" data-i="${i}" data-d="-1"${extra} ${i <= 0 ? 'disabled' : ''} aria-label="Subir ${t}">${ICON.up}</button><button data-act="${act}" data-i="${i}" data-d="1"${extra} ${i >= n - 1 ? 'disabled' : ''} aria-label="Descer ${t}">${ICON.down}</button></div>`;
+}
+/* página do culto: sobe ou desce o louvor (com a emenda junto) e salva para todos */
+function moveGroup(id, gi, dir) {
+  const l = listById(id);
+  if (!l) return;
+  const groups = groupItems(clone(l.items)), gj = gi + dir;
+  if (gi < 0 || gj < 0 || gi >= groups.length || gj >= groups.length) return;
+  [groups[gi], groups[gj]] = [groups[gj], groups[gi]];
+  const items = [].concat(...groups);
+  items.forEach((it, k) => { if (k === items.length - 1) it.join = false; });
+  apply({ lists: [Object.assign(clone(l), { items, up: Date.now() })] }, { what: 'Mudou a ordem dos louvores · ' + cultoLabel(l), merge: 'order-' + l.id });
+}
 function listPanelHTML(l) {
   const seq = listSeq(l), d = dObj(l.date), name = cultoName(l), rel = relDay(l.date), reh = rehText(l);
   const rehHTML = reh
@@ -665,7 +801,7 @@ function listPanelHTML(l) {
   let h = `<div class="p-head"><div class="in">
       <button class="backbtn" data-act="close">${ICON.back}<span>Cultos</span></button>
       <span class="sp"></span>
-      <button class="pill" data-act="edit-list" data-id="${esc(l.id)}">${ICON.edit}<span>Editar</span></button>
+      <button class="pill pri" data-act="edit-list" data-id="${esc(l.id)}">${ICON.edit}<span>Editar</span></button>
     </div></div>
     <div class="p-body"><div class="p-in">
     <section class="hero">
@@ -677,8 +813,9 @@ function listPanelHTML(l) {
   h += `<div class="esec"><h2>Louvores</h2><span>${seq.length ? seq.length + (seq.length === 1 ? ' louvor' : ' louvores') : ''}</span></div>`;
   let idx = 0;
   if (l.items.length) {
-    h += '<ol class="items">' + groupItems(l.items).map((g, gi) =>
-      `<li class="${g.length > 1 ? 'medley' : ''}">${g.map((it, k) => itemRowHTML(l, it, k === 0 ? String(gi + 1) : '+', idx++, k > 0)).join('')}</li>`
+    const groups = groupItems(l.items), ng = groups.length;
+    h += '<ol class="items">' + groups.map((g, gi) =>
+      `<li class="grp${g.length > 1 ? ' medley' : ''}"><div class="gi">${g.map((it, k) => itemRowHTML(l, it, k === 0 ? String(gi + 1) : '+', idx++, k > 0)).join('')}</div>${ng > 1 ? mvHTML('mv-group', gi, ng, ` data-list="${esc(l.id)}"`, songById(g[0].songId)) : ''}</li>`
     ).join('') + '</ol>';
   }
   if (l.diz) h += `<div class="subsec">Dízimos</div><ol class="items"><li>${itemRowHTML(l, l.diz, '', idx, false)}</li></ol>`;
@@ -713,7 +850,7 @@ function saveListPatch(id, patch, msg) {
   if (!cur) return;
   const list = Object.assign(clone(cur), patch, { up: Date.now() });
   closeSheet();
-  apply({ lists: [list], reh: rehMemo(list) });
+  apply({ lists: [list], reh: rehMemo(list) }, { what: (list.reh ? 'Mudou o ensaio para ' + wd(list.reh.date).toLowerCase() + ' ' + dm(list.reh.date) + ' às ' + String(list.reh.time).replace(':', 'h') : 'Tirou o ensaio') + ' · ' + cultoLabel(list) });
   toast(msg);
 }
 
@@ -765,6 +902,56 @@ function openSong(id, ctx, noanim) {
   updateSongPanel(p, true);
 }
 
+/* trocar o tom na tela do louvor vale para todos, na hora:
+   aberto pelo culto → tom do dia daquele culto (e o tom do ministro); aberto pela lista → tom que cantamos */
+function setTone(p, k) {
+  const st = p._st, so = songById(st.id);
+  if (!so || !k || k === st.base) return;
+  const l = st.ctx ? listById(st.ctx.list) : null;
+  if (l) {
+    const nl = clone(l), i = st.ctx.idx, isDiz = !!(nl.diz && i === nl.items.length);
+    const it = isDiz ? nl.diz : nl.items[i];
+    if (!it || it.songId !== so.id) return;
+    const old = it.key, oldMode = it.mode;
+    it.key = k;
+    it.mode = 'manual';
+    nl.up = Date.now();
+    const ops = { lists: [nl] };
+    const minister = (nl.minister || '').trim(), mk0 = minister ? normKey(minister) : '';
+    const oldMk = minister && so.keys && so.keys[mk0] ? clone(so.keys[mk0]) : null;
+    if (minister) {
+      const ns = clone(so), mk = mk0;
+      ns.keys = ns.keys || {};
+      ns.keys[mk] = { n: minister, k };
+      ns.up = Date.now();
+      ops.songs = [ns];
+    }
+    apply(ops, { what: 'Mudou o tom de ' + so.title + ' para ' + k + ' · ' + cultoLabel(nl), merge: 'tone-' + nl.id + '-' + i });
+    toast('Tom do dia agora é ' + k + ' para todos', { label: 'Desfazer', fn: () => {
+      const cl = listById(nl.id);
+      if (!cl) return;
+      const c2 = clone(cl), it2 = isDiz ? c2.diz : c2.items[i];
+      if (!it2 || it2.songId !== so.id) return;
+      it2.key = old || '';
+      it2.mode = oldMode || 'auto';
+      c2.up = Date.now();
+      const uops = { lists: [c2] }, cs = songById(so.id);
+      if (minister && cs) {
+        const s2 = clone(cs);
+        s2.keys = s2.keys || {};
+        if (oldMk) s2.keys[mk0] = oldMk; else delete s2.keys[mk0];
+        s2.up = Date.now();
+        uops.songs = [s2];
+      }
+      apply(uops, { what: 'Voltou o tom de ' + so.title + (old ? ' para ' + old : '') + ' · ' + cultoLabel(c2) });
+    } });
+  } else {
+    const old = so.play || '';
+    const ns = Object.assign(clone(so), { play: k, up: Date.now() });
+    apply({ songs: [ns] }, { what: 'Mudou o tom que cantamos ' + so.title + ' para ' + k, merge: 'play-' + so.id });
+    toast('Tom de ' + so.title + ' agora é ' + k + ' para todos', { label: 'Desfazer', fn: () => { const c = songById(so.id); if (c) apply({ songs: [Object.assign(clone(c), { play: old, up: Date.now() })] }, { what: 'Voltou o tom que cantamos ' + so.title + (old ? ' para ' + old : '') }); } });
+  }
+}
 function itemOf(st) {
   const l = st.ctx ? listById(st.ctx.list) : null;
   return l ? listSeq(l)[st.ctx.idx] || null : null;
@@ -826,7 +1013,7 @@ function songPanelHTML(so, st) {
   return `<div class="p-head"><div class="in">
       <button class="iconbtn" data-act="close" aria-label="Voltar">${ICON.back}</button>
       <div class="p-title" data-el="title">${titleHTML(so, st)}</div>
-      <button class="iconbtn" data-act="edit" data-id="${esc(so.id)}" aria-label="Editar louvor">${ICON.edit}</button>
+      <button class="iconbtn pri" data-act="edit" data-id="${esc(so.id)}" aria-label="Editar louvor">${ICON.edit}</button>
     </div></div>
     <div class="p-body"><div class="p-in">
       ${videoHTML(so, st)}
@@ -863,10 +1050,7 @@ function refreshSongPanel(p) {
     }
   }
   const base = baseKeyFor(so, st.ctx);
-  if (base !== st.base) {
-    if (!st.key || st.key === st.base) st.key = base;
-    st.base = base;
-  }
+  if (base !== st.base) { st.key = base; st.base = base; }
   $('[data-el="title"]', p).innerHTML = titleHTML(so, st);
   $('[data-el="obs"]', p).innerHTML = obsHTML(st);
   $('[data-el="keys"]', p).innerHTML = keysHTML(st);
@@ -899,12 +1083,10 @@ function navHTML(l, i) {
 function kinfoHTML(so, st) {
   const day = !!st.ctx, cf = cifraFor(so, S.inst), orig = cf.key;
   const lines = [];
-  if (!st.base) lines.push(st.key ? `Vendo em <b>${st.key}</b>, só na sua tela` : 'Tom ainda não definido para este louvor.');
-  else if (st.key === st.base) {
+  if (!st.base) lines.push('Tom ainda não definido. Toque num tom para escolher para todos.');
+  else {
     const lbl = day ? 'Tom do dia' : (so.play ? 'Tom que cantamos' : 'Tom');
     lines.push(`${lbl} <b>${st.base}</b>${cf.text && orig && st.base !== orig ? ' · cifra escrita em ' + orig : ''}`);
-  } else {
-    lines.push(`Vendo em <b>${st.key}</b>, só na sua tela · <button class="linkbtn" data-act="key" data-v="${st.base}">Voltar para ${st.base}</button>`);
   }
   if (st.key && S.inst === 'gt') {
     if (st.capo > 0) lines.push(`Capo ${st.capo} · formas de <b>${shiftKey(st.key, -st.capo)}</b>, soando em ${st.key}`);
@@ -1209,6 +1391,7 @@ function erowHTML(d, it, num, ref) {
       <span class="et"><b>${esc(so.title)}</b>${ver ? `<small>${esc(ver)}</small>` : ''}${it.obs ? `<span class="obs">${esc(it.obs)}</span>` : ''}${chips ? `<span class="chips">${chips}</span>` : ''}</span>
       <span class="ekey"><span class="kmini${it.key ? '' : ' none'}">${it.key ? esc(it.key) : '—'}</span><small>${keyHintHTML(d, it, so)}</small></span>
     </button>
+    ${ref === 'diz' || d.items.length < 2 ? '' : mvHTML('mv-item', +ref, d.items.length, '', so)}
     <button class="erm" data-act="rm-item" data-i="${ref}" aria-label="Remover ${esc(so.title)}">${ICON.x}</button>
   </div>`;
 }
@@ -1220,7 +1403,7 @@ function refreshItems(p) {
   if (!n) { el.innerHTML = `<p class="emptyline">Nenhum louvor ainda. ${p._new ? 'Cole a mensagem acima ou toque em Adicionar louvor.' : 'Toque em Adicionar louvor.'}</p>`; return; }
   let g = 0;
   el.innerHTML = d.items.map((it, i) => erowHTML(d, it, (i === 0 || !d.items[i - 1].join) ? String(++g) : '+', String(i))).join('') +
-    '<p class="hint mt">Toque no louvor para trocar o tom, emendar ou mudar a ordem. O × remove.</p>';
+    '<p class="hint mt">Toque no louvor para trocar o tom ou emendar. As setas mudam a ordem e o × remove.</p>';
 }
 const acHTML = target => `<div class="ac">${ICON.search}<input class="inp" id="${target === 'diz' ? 'le-diz' : 'le-add'}" data-ac="${target}" placeholder="${target === 'diz' ? 'Buscar o louvor dos dízimos' : 'Buscar louvor para adicionar'}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="ac-${target}" aria-autocomplete="list"><div class="ac-list" id="ac-${target}" data-el="ac-${target}" role="listbox" hidden></div></div>`;
 function refreshDiz(p) {
@@ -1349,7 +1532,7 @@ function saveList(p) {
   const reh = d.reh && d.reh.time ? { date: isIso(d.reh.date) ? d.reh.date : d.date, time: d.reh.time } : null;
   const list = { id, date: d.date, minister, kind: d.kind || '', name: d.kind === 'outro' ? d.name.trim() : '', reh, aviso: (d.aviso || '').trim(), items: d.items.map(cleanItem), diz: d.diz ? cleanItem(d.diz) : null, up: Date.now() };
   const isNew = p._new;
-  apply({ songs: [...touched.values()], lists: [list], people: mergeNames(d.people, minister ? [minister] : []), reh: rehMemo(list) });
+  apply({ songs: [...touched.values()], lists: [list], people: mergeNames(d.people, minister ? [minister] : []), reh: rehMemo(list) }, { what: (isNew ? 'Criou o ' : 'Editou o ') + cultoLabel(list) });
   removePanel(p);
   const tp = topPanel();
   if (!(tp && tp._kind === 'list' && tp._id === id)) {
@@ -1363,10 +1546,10 @@ function saveList(p) {
 function deleteList(p) {
   const id = p._d.id, old = listById(id);
   if (!old) { removePanel(p); return; }
-  apply({ delLists: [id] });
+  apply({ delLists: [id] }, { what: 'Excluiu o ' + cultoLabel(old) });
   removePanel(p);
   stack.slice().forEach(x => { if (x._kind === 'list' && x._id === id) removePanel(x); });
-  toast('Culto excluído', { label: 'Desfazer', fn: () => { apply({ lists: [old] }); openList(old.id); } });
+  toast('Culto excluído', { label: 'Desfazer', fn: () => { apply({ lists: [old] }, { what: 'Desfez a exclusão do ' + cultoLabel(old) }); openList(old.id); } });
 }
 
 /* ===== Cadastro de louvor (cifra de violão e de teclado) ===== */
@@ -1476,7 +1659,8 @@ function saveSong(p) {
   const d = p._d;
   if (!(d.title || '').trim()) { toast('Escreva o nome do louvor'); $('#f-title', p).focus(); return; }
   const song = cleanSong(d);
-  apply({ songs: [song] });
+  const was = songById(song.id);
+  apply({ songs: [song] }, { what: (was ? 'Editou o louvor ' : 'Cadastrou o louvor ') + song.title });
   const ctx = p._ctx;
   removePanel(p);
   const tp = topPanel();
@@ -1494,10 +1678,10 @@ function deleteSong(p) {
   const hit = DATA.lists.filter(l => listSeq(l).some(it => it.songId === id));
   const oldLists = hit.map(clone);
   const lists = hit.map(l => Object.assign(clone(l), { items: l.items.filter(it => it.songId !== id), diz: l.diz && l.diz.songId === id ? null : l.diz, up: Date.now() }));
-  apply({ delSongs: [id], lists });
+  apply({ delSongs: [id], lists }, { what: 'Excluiu o louvor ' + old.title });
   removePanel(p);
   stack.slice().forEach(x => { if (x._kind === 'song' && x._st.id === id) removePanel(x); });
-  toast('Louvor excluído', { label: 'Desfazer', fn: () => apply({ songs: [old], lists: oldLists }) });
+  toast('Louvor excluído', { label: 'Desfazer', fn: () => apply({ songs: [old], lists: oldLists }, { what: 'Desfez a exclusão do louvor ' + old.title }) });
 }
 
 /* ===== Dados chegando (de outra pessoa ou do aparelho) ===== */
@@ -1575,6 +1759,12 @@ document.addEventListener('click', e => {
     case 'tip-close': storeSet('localStorage', 'lm-tip-install', '0'); renderCultos(); break;
     case 'code': openCode(); break;
     case 'code-go': doChangeCode(b); break;
+    case 'share-app': closeMenu(); return; /* o link abre o WhatsApp */
+    case 'history': openHistory(); break;
+    case 'admin-pass': openAdminPass(); break;
+    case 'admin-pass-go': doAdminPass(b); break;
+    case 'become-admin': openBecomeAdmin(); break;
+    case 'become-admin-go': doBecomeAdmin(b); break;
     case 'import': openImport(); break;
     case 'import-go': doImport(b); break;
     case 'leave': openLeave(); break;
@@ -1609,7 +1799,7 @@ document.addEventListener('click', e => {
     case 'exit-stay': closeSheet(); break;
     case 'discard-go': { const t = discardTarget; discardTarget = null; closeSheet(); if (t) removePanel(t); break; }
 
-    case 'key': p._st.key = b.dataset.v; updateSongPanel(p); break;
+    case 'key': setTone(p, b.dataset.v); break;
     case 'capo': p._st.capo = Math.max(0, Math.min(7, p._st.capo + (+b.dataset.d))); updateSongPanel(p); break;
     case 'capo-set': p._st.capo = +b.dataset.v; updateSongPanel(p); break;
     case 'size': {
@@ -1706,6 +1896,18 @@ document.addEventListener('click', e => {
       it.join = !it.join;
       refreshEditor(ctx.p);
       renderItemSheet();
+      break;
+    }
+    case 'mv-group': moveGroup(b.dataset.list, +b.dataset.i, +b.dataset.d); break;
+    case 'mv-item': {
+      if (!p || !p._d) break;
+      const d = p._d, i = +b.dataset.i, j = i + (+b.dataset.d);
+      if (j < 0 || j >= d.items.length) break;
+      const [x] = d.items.splice(i, 1);
+      d.items.splice(j, 0, x);
+      refreshEditor(p);
+      const nb = $(`[data-act="mv-item"][data-i="${j}"][data-d="${b.dataset.d}"]`, p);
+      if (nb && !nb.disabled) nb.focus();
       break;
     }
     case 'sheet-mv': {
@@ -1823,6 +2025,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'g-code') { e.preventDefault(); const n = $('#g-name'); if (n) n.focus(); return; }
   if (e.key === 'Enter' && id === 'g-name') { e.preventDefault(); const b = $('[data-act="g-join"], [data-act="g-setup"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'rn-name') { e.preventDefault(); const b = $('[data-act="rename-go"]'); if (b) b.click(); return; }
+  if (e.key === 'Enter' && id === 'ba-pass') { e.preventDefault(); const b = $('[data-act="become-admin-go"]'); if (b) b.click(); return; }
+  if (e.key === 'Enter' && id === 'ap-new') { e.preventDefault(); const b = $('[data-act="admin-pass-go"]'); if (b) b.click(); return; }
   if (e.key === 'Escape' && !HAS_CW && backLayers() > 0) goBack(); /* no Chrome, o Esc chega pelo vigia */
 });
 

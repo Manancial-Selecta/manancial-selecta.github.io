@@ -26,6 +26,9 @@ export const ICON = {
   keyic: sv('<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L19 4M15.5 7.5l2.5 2.5"/>'),
   upload: sv('<path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>'),
   offline: sv('<path d="M3 3l18 18"/><path d="M8.6 5.3A6 6 0 0 1 17.7 10H18a4 4 0 0 1 2.4 7.2M16.5 19H7a4.5 4.5 0 0 1-1.6-8.7"/>'),
+  shield: sv('<path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/>'),
+  hist: sv('<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4"/><path d="M12 7.5V12l3 2"/>'),
+  whats: sv('<path d="M4 20l1.3-4A8 8 0 1 1 8 18.8z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 1c-1-.4-1.8-1.2-2.2-2.2l1-1-1-2-1.3 1.2z"/>'),
   share: sv('<path d="M12 15V4"/><path d="M8 7.5L12 3.5l4 4"/><path d="M6.5 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5"/>'),
   more: sv('<circle cx="12" cy="5.5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="18.5" r="1.2"/>'),
   play: '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false"><path d="M8.5 5.8v12.4L19 12z" fill="currentColor"/></svg>'

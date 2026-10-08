@@ -165,6 +165,30 @@ const lastPanel = page => page.locator('.panel').last();
     check(await A.locator('.panel .hero').count() === 1, 'desfazer reabre o culto');
     await lastPanel(A).locator('[data-act="close"]').first().click();
 
+    /* ----- tom e ordem em tempo real: A muda, B vê na hora (na página do culto e na tela do louvor) ----- */
+    await A.click('[data-act="tab"][data-v="cultos"]');
+    await B.click('[data-act="tab"][data-v="cultos"]');
+    await A.click('.lcard >> text=11 de outubro');
+    await B.click('.lcard >> text=11 de outubro');
+    await lastPanel(B).locator('[data-act="open-item"]').first().click();
+    await lastPanel(A).locator('[data-act="open-item"]').first().click();
+    await lastPanel(A).locator('.kchip').first().waitFor();
+    const k0 = (await lastPanel(A).locator('.kchip[aria-pressed="true"]').count()) ? ((await lastPanel(A).locator('.kchip[aria-pressed="true"]').textContent()) || '').trim() : '';
+    const k1 = k0 === 'A' ? 'B' : 'A';
+    await lastPanel(A).locator('.kchip', { hasText: new RegExp('^' + k1 + '$') }).first().click();
+    check(await until(async () => ((await lastPanel(B).locator('.kchip[aria-pressed="true"]').textContent()) || '').trim() === k1), 'B vê o tom novo na tela do louvor', [k0, k1]);
+    check(/para todos/.test(await A.locator('#toast').textContent()), 'avisa que o tom mudou para todos');
+    await lastPanel(A).locator('[data-act="close"]').first().click();
+    await lastPanel(B).locator('[data-act="close"]').first().click();
+    check(await until(async () => ((await lastPanel(B).locator('.srow .kmini').first().textContent()) || '').trim() === k1), 'B vê o tom novo na página do culto');
+    const titles = async P => P.locator('.panel .items .srow b').allTextContents();
+    const t0 = await titles(B);
+    await lastPanel(A).locator('[data-act="mv-group"][data-d="1"]').first().click();
+    check(await until(async () => { const t = await titles(B); return t[0] === t0[1] && t[1] === t0[0]; }), 'B vê a ordem nova na hora', t0);
+    check(await until(async () => { const t = await titles(A); return t[0] === t0[1]; }), 'A vê a ordem nova');
+    await lastPanel(A).locator('[data-act="close"]').first().click();
+    await lastPanel(B).locator('[data-act="close"]').first().click();
+
     /* ----- outra pessoa vira administradora pelo console do Firebase: o celular dela fica sabendo na hora ----- */
     await B.evaluate(() => {
       const db = JSON.parse(localStorage.getItem('mock-fs-db'));
@@ -201,6 +225,56 @@ const lastPanel = page => page.locator('.panel').last();
     await C.click('[data-act="g-join"]');
     check(await until(async () => C.locator('#app:not([hidden])').isVisible()), 'código novo entra');
     check(await until(async () => (await C.locator('.lcard').count()) === 3), 'pessoa nova recebe tudo');
+
+    /* ----- senha de administrador ----- */
+    const fsCall = (P, fn) => P.evaluate(fn);
+    /* regras: membro comum não lê o histórico nem vira administrador sem a senha */
+    check(await fsCall(C, async () => { const m = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js'); try { await m.getDocs(m.query(m.collection(null, 'log'))); return 'leu'; } catch (e) { return e.code; } }) === 'permission-denied', 'membro comum não lê o histórico');
+    check(await fsCall(C, async () => { const m = await import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js'); const uid = JSON.parse(sessionStorage.getItem('mock-auth-user')).uid; try { await m.setDoc(m.doc(null, 'members', uid), { admin: true }, { merge: true }); return 'virou'; } catch (e) { return e.code; } }) === 'permission-denied', 'não vira administrador sem senha');
+    await C.click('#me-btn');
+    check(await C.locator('.menu [data-act="become-admin"]').count() === 1 && await C.locator('.menu [data-act="history"]').count() === 0, 'membro vê "Entrar como administrador"');
+    await C.click('.menu [data-act="become-admin"]');
+    await C.fill('#ba-pass', 'qualquer');
+    await C.click('[data-act="become-admin-go"]');
+    check(await until(async () => /Senha errada/.test(await C.locator('.sheet .gerr').textContent())), 'sem senha criada: não entra');
+    await C.keyboard.press('Escape');
+    await A.click('#me-btn');
+    await A.click('.menu [data-act="admin-pass"]');
+    check(await until(async () => /Ainda sem senha/.test(await A.locator('.sheet .codebox').textContent())), 'administrador vê que ainda não tem senha');
+    await A.fill('#ap-new', '  Ensaio2026 ');
+    await A.click('[data-act="admin-pass-go"]');
+    check(await until(async () => /Senha de administrador salva/.test(await A.locator('#toast').textContent())), 'senha salva');
+    await A.click('#me-btn');
+    await A.click('.menu [data-act="admin-pass"]');
+    check(await until(async () => (await A.locator('.sheet .codebox').textContent()) === 'ensaio2026'), 'administrador vê a senha');
+    await A.keyboard.press('Escape');
+    await C.click('#me-btn');
+    await C.click('.menu [data-act="become-admin"]');
+    await C.fill('#ba-pass', 'errada1');
+    await C.click('[data-act="become-admin-go"]');
+    check(await until(async () => /Senha errada/.test(await C.locator('.sheet .gerr').textContent())), 'senha errada não entra');
+    await C.fill('#ba-pass', 'ENSAIO2026');
+    await C.click('[data-act="become-admin-go"]');
+    check(await until(async () => /agora você é administrador/i.test(await C.locator('#toast').textContent())), 'senha certa: vira administrador');
+    await C.click('#me-btn');
+    check(await C.locator('.menu [data-act="history"]').count() === 1, 'menu de administrador aparece');
+    await C.keyboard.press('Escape');
+    const dbA = await A.evaluate(() => JSON.parse(localStorage.getItem('mock-fs-db')));
+    check(Object.values(dbA).filter(d => d && d.name === 'Nova Pessoa' && d.admin === true).length === 1, 'administrador no banco');
+
+    /* ----- histórico (só administrador) ----- */
+    await A.click('#me-btn');
+    await A.click('.menu [data-act="history"]');
+    check(await until(async () => (await A.locator('.panel .hrow').count()) > 3), 'histórico carrega');
+    const hist = await A.locator('.panel [data-el="hist"]').textContent();
+    check(/Carla/.test(hist) && /Nova Pessoa/.test(hist) && /Ana Lima/.test(hist), 'quem abriu o app', hist.slice(0, 200));
+    check(/Entrou como administrador/.test(hist), 'histórico: virou administrador');
+    check(/Mudou o tom de .+ para (A|B)/.test(hist), 'histórico: tom');
+    check(/Mudou a ordem dos louvores/.test(hist), 'histórico: ordem');
+    check(/Mudou o código do ministério/.test(hist), 'histórico: código');
+    check(/Cadastrou o louvor Louvor da Carla/.test(hist) && /Excluiu o culto de sexta 09\/10/.test(hist), 'histórico: louvor e culto', hist.slice(0, 900));
+    await A.screenshot({ path: path.join(SHOTS, '22-historico.png') });
+    await lastPanel(A).locator('[data-act="close"]').first().click();
 
     /* ----- acesso removido ----- */
     await C.evaluate(() => {

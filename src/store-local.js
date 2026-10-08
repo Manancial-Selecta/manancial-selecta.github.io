@@ -1,9 +1,9 @@
 /* Modo demonstração (sem Firebase): os dados ficam só neste aparelho.
    Serve para a prévia e para os testes. Abas abertas no mesmo aparelho se atualizam juntas. */
 import { normSong, normList, normMeta, fromPrototype, sameJSON } from './model.js';
-import { clone, storeGet, storeSet, storeDel, uid, mergeNames } from './util.js';
+import { clone, storeGet, storeSet, storeDel, uid, mergeNames, today } from './util.js';
 
-const DATA_KEY = 'lm-demo-data', ME_KEY = 'lm-demo-me', CODE_KEY = 'lm-demo-code';
+const DATA_KEY = 'lm-demo-data', ME_KEY = 'lm-demo-me', CODE_KEY = 'lm-demo-code', LOG_KEY = 'lm-demo-log', PASS_KEY = 'lm-demo-adminpass', OPEN_KEY = 'lm-demo-open';
 const err = code => Object.assign(new Error(code), { code });
 export const normCode = c => String(c || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -69,6 +69,17 @@ export function createLocalStore(opts) {
     return Promise.resolve();
   }
 
+  /* histórico do modo demonstração: fica só neste aparelho */
+  function readLog() { try { const a = JSON.parse(storeGet('localStorage', LOG_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function writeLog(t, what) {
+    const m = readMe();
+    if (!m) return Promise.resolve();
+    const a = readLog().filter(x => x.at > Date.now() - 8 * 864e5);
+    a.push({ id: uid('g'), at: Date.now(), uid: m.uid, by: m.name, t, what: String(what || '').slice(0, 300) });
+    storeSet('localStorage', LOG_KEY, JSON.stringify(a));
+    return Promise.resolve();
+  }
+
   return {
     mode: 'local',
     demoCode,
@@ -82,6 +93,8 @@ export function createLocalStore(opts) {
     async join(c, name) {
       if (normCode(c) !== normCode(code())) throw err('bad-code');
       setMe({ uid: uid('u'), name, admin: false });
+      storeSet('localStorage', OPEN_KEY, today());
+      writeLog('join', 'Entrou no app pela primeira vez');
     },
     async setup(c, name, seedData) {
       if (normCode(c).length < 6) throw err('short-code');
@@ -95,10 +108,34 @@ export function createLocalStore(opts) {
     async changeCode(c) {
       if (normCode(c).length < 6) throw err('short-code');
       setCode(normCode(c));
+      writeLog('edit', 'Mudou o código do ministério');
     },
     async importSeed(raw) {
       const d = fromPrototype(raw);
       return commit({ songs: d.songs, lists: d.lists, people: d.meta.people, reh: d.meta.prefs.reh });
+    },
+    log: what => writeLog('edit', what),
+    logOpen() {
+      if (!readMe() || storeGet('localStorage', OPEN_KEY) === today()) return;
+      storeSet('localStorage', OPEN_KEY, today());
+      writeLog('open', 'Abriu o app');
+    },
+    async history(days) {
+      if (!(readMe() || {}).admin) throw err('not-admin');
+      return readLog().filter(x => x.at > Date.now() - days * 864e5).sort((a, b) => b.at - a.at);
+    },
+    async adminPass() { return storeGet('localStorage', PASS_KEY) || ''; },
+    async setAdminPass(p) {
+      const c = normCode(p);
+      if (c.length < 6) throw err('short-pass');
+      storeSet('localStorage', PASS_KEY, c);
+      writeLog('edit', 'Mudou a senha de administrador');
+    },
+    async becomeAdmin(p) {
+      const c = normCode(p), cur = storeGet('localStorage', PASS_KEY);
+      if (!c || !cur || c !== cur) throw err('bad-pass');
+      setMe(Object.assign({}, readMe(), { admin: true }));
+      writeLog('edit', 'Entrou como administrador');
     },
     commit
   };
