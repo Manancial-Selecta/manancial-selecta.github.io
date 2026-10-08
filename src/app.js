@@ -311,7 +311,7 @@ function openSheet(html, ctx) {
   s._ctx = ctx || {};
   sheetEl = s;
 }
-function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; } }
+function closeSheet() { if (sheetEl) { sheetEl.remove(); sheetEl = null; } exitAsk = false; }
 
 let menuEl = null;
 function closeMenu() {
@@ -325,15 +325,18 @@ function closeMenu() {
 /* ===== Botão voltar do celular =====
    Enquanto houver algo aberto (tela, folha ou menu), fica uma entrada extra no histórico.
    O voltar do celular consome essa entrada e fecha só o que está por cima, em vez de sair do app. */
-let backGuard = false, backSkip = 0, backQueued = false;
+let backGuard = false, backSkip = 0, backQueued = false, exitAsk = false;
 const backLayers = () => stack.length + (sheetEl ? 1 : 0) + (menuEl ? 1 : 0);
+const appOpen = () => { const a = $('#app'); return !!a && !a.hidden && !$('#gate'); };
+/* o Chrome ignora entradas do histórico criadas antes de a pessoa tocar na tela */
+const touchedPage = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
 function syncBack() {
   backQueued = false;
   if (backSkip) return; /* esperando o histórico voltar; o popstate chama de novo */
-  const need = backLayers() > 0;
+  const need = appOpen() && !exitAsk && (backLayers() > 0 || touchedPage());
   try {
     if (need && !backGuard) { history.pushState({ lmBack: 1 }, '', location.href); backGuard = true; }
-    else if (!need && backGuard) { backGuard = false; backSkip++; history.back(); }
+    else if (!need && backGuard && !exitAsk) { backGuard = false; backSkip++; history.back(); }
   } catch (e) { /* navegador sem histórico: segue sem o voltar do celular */ }
 }
 function queueSyncBack() { if (!backQueued) { backQueued = true; Promise.resolve().then(syncBack); } }
@@ -350,7 +353,7 @@ function goBack() {
   if (menuEl) { closeMenu(); return; }
   if (sheetEl) { closeSheet(); return; }
   const p = topPanel();
-  if (!p) return;
+  if (!p) { askExit(); return; }
   if (p._kind === 'song' && p._st.palco) { togglePalco(p); return; }
   if (editorDirty(p)) {
     discardTarget = p;
@@ -360,6 +363,13 @@ function goBack() {
   }
   removePanel(p);
 }
+/* na tela inicial: confirma antes de sair (o próximo voltar sai do app) */
+function askExit() {
+  if (!appOpen()) return;
+  openSheet(`<h3>Sair do app?</h3><p>Aperte voltar de novo para sair.</p>
+    <button class="btn pri wide" data-act="exit-stay">Continuar no app</button>`);
+  exitAsk = true;
+}
 window.addEventListener('popstate', () => {
   if (backSkip) { backSkip--; queueSyncBack(); return; }
   backGuard = false;
@@ -367,6 +377,7 @@ window.addEventListener('popstate', () => {
   queueSyncBack();
 });
 new MutationObserver(queueSyncBack).observe(document.body, { childList: true });
+['click', 'keydown'].forEach(t => document.addEventListener(t, () => { if (!backGuard) queueSyncBack(); }, true));
 /* guarda como o editor estava antes da primeira mexida */
 ['input', 'change', 'click'].forEach(t => document.addEventListener(t, e => {
   const p = e.target && e.target.closest && e.target.closest('.panel');
@@ -426,6 +437,7 @@ function openGate(kind, msg) {
   while (stack.length) closePanel();
   $('#app').hidden = true;
   $('#tabbar').hidden = true;
+  queueSyncBack();
   const boot = $('#boot');
   if (boot) boot.remove();
   let g = $('#gate');
@@ -496,6 +508,7 @@ function enterApp() {
   $('#app').hidden = false;
   $('#tabbar').hidden = false;
   S.ready = true;
+  queueSyncBack();
   DATA = STORE.view();
   if (!UNSUB) UNSUB = STORE.subscribe(onData);
   if (DATA.lists.length && !upcomingLists().length) S.tab = 'louvores';
@@ -1569,6 +1582,7 @@ document.addEventListener('click', e => {
     case 'reh-clear': { const ctx = sheetEl && sheetEl._ctx; if (ctx && ctx.list) saveListPatch(ctx.list, { reh: null }, 'Ensaio removido'); break; }
     case 'close': if (p) removePanel(p); break;
     case 'discard-stay': closeSheet(); break;
+    case 'exit-stay': closeSheet(); break;
     case 'discard-go': { const t = discardTarget; discardTarget = null; closeSheet(); if (t) removePanel(t); break; }
 
     case 'key': p._st.key = b.dataset.v; updateSongPanel(p); break;
@@ -1785,7 +1799,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'g-code') { e.preventDefault(); const n = $('#g-name'); if (n) n.focus(); return; }
   if (e.key === 'Enter' && id === 'g-name') { e.preventDefault(); const b = $('[data-act="g-join"], [data-act="g-setup"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'rn-name') { e.preventDefault(); const b = $('[data-act="rename-go"]'); if (b) b.click(); return; }
-  if (e.key === 'Escape') goBack();
+  if (e.key === 'Escape' && (backLayers() > 0)) goBack();
 });
 
 window.addEventListener('resize', () => { closeMenu(); stack.forEach(p => { if (p._kind === 'song') fitCifra(p); }); });
