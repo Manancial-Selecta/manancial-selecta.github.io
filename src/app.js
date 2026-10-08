@@ -771,11 +771,10 @@ function itemRowHTML(l, it, num, idx, joined) {
   const so = songById(it.songId);
   if (!so) return '';
   const ver = it.version || so.version;
-  return `<button class="srow${joined ? ' joined' : ''}" data-act="open-item" data-list="${esc(l.id)}" data-idx="${idx}">
+  return `<div class="sroww${joined ? ' joined' : ''}"><button class="srow${joined ? ' joined' : ''}" data-act="open-item" data-list="${esc(l.id)}" data-idx="${idx}">
     <span class="n">${num}</span>
     <span class="t"><b>${esc(so.title)}</b>${ver ? `<small>${esc(ver)}</small>` : ''}${it.obs ? `<span class="obs">${esc(it.obs)}</span>` : ''}${hasCifra(so) ? '' : '<span class="chips"><span class="chip">Sem cifra</span></span>'}</span>
-    ${it.key ? `<span class="kmini">${esc(it.key)}</span>` : '<span class="kmini none" aria-label="Sem tom">—</span>'}
-  </button>`;
+  </button><button class="kbtn" data-act="day-key" data-list="${esc(l.id)}" data-idx="${idx}" aria-label="Tom do dia de ${esc(so.title)}: ${esc(it.key || 'sem tom')}. Trocar">${it.key ? `<span class="kmini">${esc(it.key)}</span>` : '<span class="kmini none">—</span>'}</button></div>`;
 }
 /* setinhas para mudar a ordem (página do culto e editor) */
 function mvHTML(act, i, n, extra, so) {
@@ -821,7 +820,7 @@ function listPanelHTML(l) {
   if (l.diz) h += `<div class="subsec">Dízimos</div><ol class="items"><li>${itemRowHTML(l, l.diz, '', idx, false)}</li></ol>`;
   if (!seq.length) h += `<p class="emptyline">Nenhum louvor ainda. <button class="linkbtn" data-act="edit-list" data-id="${esc(l.id)}">Adicionar louvores</button></p>`;
   if (l.aviso) h += `<div class="avisobox"><span class="lbl">Aviso</span><p>${esc(l.aviso)}</p></div>`;
-  if (seq.length) h += '<p class="hint mt2">Toque num louvor para ver o vídeo e a cifra no tom do dia.</p>';
+  if (seq.length) h += '<p class="hint mt2">Toque num louvor para ver o vídeo e a cifra. Toque no tom para trocar o tom do dia de todos; as setas mudam a ordem.</p>';
   h += '</div></div>';
   return h;
 }
@@ -902,55 +901,69 @@ function openSong(id, ctx, noanim) {
   updateSongPanel(p, true);
 }
 
-/* trocar o tom na tela do louvor vale para todos, na hora:
-   aberto pelo culto → tom do dia daquele culto (e o tom do ministro); aberto pela lista → tom que cantamos */
-function setTone(p, k) {
-  const st = p._st, so = songById(st.id);
-  if (!so || !k || k === st.base) return;
-  const l = st.ctx ? listById(st.ctx.list) : null;
-  if (l) {
-    const nl = clone(l), i = st.ctx.idx, isDiz = !!(nl.diz && i === nl.items.length);
-    const it = isDiz ? nl.diz : nl.items[i];
-    if (!it || it.songId !== so.id) return;
-    const old = it.key, oldMode = it.mode;
-    it.key = k;
-    it.mode = 'manual';
-    nl.up = Date.now();
-    const ops = { lists: [nl] };
-    const minister = (nl.minister || '').trim(), mk0 = minister ? normKey(minister) : '';
-    const oldMk = minister && so.keys && so.keys[mk0] ? clone(so.keys[mk0]) : null;
-    if (minister) {
-      const ns = clone(so), mk = mk0;
-      ns.keys = ns.keys || {};
-      ns.keys[mk] = { n: minister, k };
-      ns.up = Date.now();
-      ops.songs = [ns];
-    }
-    apply(ops, { what: 'Mudou o tom de ' + so.title + ' para ' + k + ' · ' + cultoLabel(nl), merge: 'tone-' + nl.id + '-' + i });
-    toast('Tom do dia agora é ' + k + ' para todos', { label: 'Desfazer', fn: () => {
-      const cl = listById(nl.id);
-      if (!cl) return;
-      const c2 = clone(cl), it2 = isDiz ? c2.diz : c2.items[i];
-      if (!it2 || it2.songId !== so.id) return;
-      it2.key = old || '';
-      it2.mode = oldMode || 'auto';
-      c2.up = Date.now();
-      const uops = { lists: [c2] }, cs = songById(so.id);
-      if (minister && cs) {
-        const s2 = clone(cs);
-        s2.keys = s2.keys || {};
-        if (oldMk) s2.keys[mk0] = oldMk; else delete s2.keys[mk0];
-        s2.up = Date.now();
-        uops.songs = [s2];
-      }
-      apply(uops, { what: 'Voltou o tom de ' + so.title + (old ? ' para ' + old : '') + ' · ' + cultoLabel(c2) });
-    } });
-  } else {
-    const old = so.play || '';
-    const ns = Object.assign(clone(so), { play: k, up: Date.now() });
-    apply({ songs: [ns] }, { what: 'Mudou o tom que cantamos ' + so.title + ' para ' + k, merge: 'play-' + so.id });
-    toast('Tom de ' + so.title + ' agora é ' + k + ' para todos', { label: 'Desfazer', fn: () => { const c = songById(so.id); if (c) apply({ songs: [Object.assign(clone(c), { play: old, up: Date.now() })] }, { what: 'Voltou o tom que cantamos ' + so.title + (old ? ' para ' + old : '') }); } });
+/* tom do dia: muda na página do culto e vale para todos, na hora (na tela da cifra cada um vê o tom que quiser) */
+function dayKeyCtx(l, idx) {
+  const isDiz = !!(l.diz && idx === l.items.length);
+  const it = isDiz ? l.diz : l.items[idx];
+  return { isDiz, it, so: it ? songById(it.songId) : null };
+}
+function openDayKeySheet(listId, idx) {
+  const l = listById(listId);
+  if (!l) return;
+  const { it, so } = dayKeyCtx(l, idx);
+  if (!it || !so) return;
+  const base = it.key || so.play || origKey(so);
+  const list = base ? keyList(base) : ALL_KEYS;
+  const hints = [];
+  Object.keys(so.keys || {}).forEach(nk => { const e = so.keys[nk]; if (e && e.k) hints.push({ label: (e.n || nk) + ' canta em', k: e.k }); });
+  if (so.play) hints.push({ label: 'Tom que cantamos', k: so.play });
+  const ok = origKey(so);
+  if (ok && ok !== so.play) hints.push({ label: 'Tom da cifra', k: ok });
+  openSheet(`<h3>${esc(so.title)}</h3><p>Tom do dia · ${esc(cultoLabel(l))}. Muda para todos.</p>
+    <div class="kgrid">${list.map(k => `<button class="kchip" data-act="day-key-set" data-v="${k}" aria-pressed="${k === it.key}">${k}</button>`).join('')}</div>
+    <div class="hints">${hints.map(x => `<button class="hintbtn" data-act="day-key-set" data-v="${x.k}"><span>${esc(x.label)}</span><span class="kmini">${x.k}</span></button>`).join('')}<button class="hintbtn" data-act="day-key-set" data-v="" aria-pressed="${!it.key}"><span>Sem tom</span></button></div>`, { dayKey: true, list: listId, idx, songId: so.id });
+}
+function setDayKey(listId, idx, k) {
+  const l = listById(listId);
+  const ctx = sheetEl && sheetEl._ctx;
+  closeSheet();
+  if (!l) return;
+  const nl = clone(l), { isDiz, so } = dayKeyCtx(l, idx);
+  const it = isDiz ? nl.diz : nl.items[idx];
+  if (!it || !so || (ctx && ctx.songId && ctx.songId !== so.id) || (it.key || '') === (k || '')) return;
+  const old = it.key || '', oldMode = it.mode;
+  it.key = k || '';
+  it.mode = 'manual';
+  nl.up = Date.now();
+  const ops = { lists: [nl] };
+  const minister = (nl.minister || '').trim(), mk = minister ? normKey(minister) : '';
+  const oldMk = minister && so.keys && so.keys[mk] ? clone(so.keys[mk]) : null;
+  if (minister && k) {
+    const ns = clone(so);
+    ns.keys = ns.keys || {};
+    ns.keys[mk] = { n: minister, k };
+    ns.up = Date.now();
+    ops.songs = [ns];
   }
+  apply(ops, { what: (k ? 'Mudou o tom do dia de ' + so.title + ' para ' + k : 'Tirou o tom do dia de ' + so.title) + ' · ' + cultoLabel(nl) });
+  toast(k ? 'Tom do dia agora é ' + k + ' para todos' : 'Tom do dia removido', { label: 'Desfazer', fn: () => {
+    const cl = listById(nl.id);
+    if (!cl) return;
+    const c2 = clone(cl), it2 = isDiz ? c2.diz : c2.items[idx];
+    if (!it2 || it2.songId !== so.id) return;
+    it2.key = old;
+    it2.mode = oldMode || 'auto';
+    c2.up = Date.now();
+    const uops = { lists: [c2] }, cs = songById(so.id);
+    if (minister && k && cs) {
+      const s2 = clone(cs);
+      s2.keys = s2.keys || {};
+      if (oldMk) s2.keys[mk] = oldMk; else delete s2.keys[mk];
+      s2.up = Date.now();
+      uops.songs = [s2];
+    }
+    apply(uops, { what: 'Voltou o tom do dia de ' + so.title + (old ? ' para ' + old : '') + ' · ' + cultoLabel(c2) });
+  } });
 }
 function itemOf(st) {
   const l = st.ctx ? listById(st.ctx.list) : null;
@@ -1039,7 +1052,7 @@ function songPanelHTML(so, st) {
 }
 
 /* dados mudaram com o louvor aberto: atualiza sem recarregar o vídeo que está tocando */
-function refreshSongPanel(p) {
+function refreshSongPanel(p, remote) {
   const st = p._st, so = songById(st.id);
   if (!so) return;
   if (st.ctx) {
@@ -1050,7 +1063,12 @@ function refreshSongPanel(p) {
     }
   }
   const base = baseKeyFor(so, st.ctx);
-  if (base !== st.base) { st.key = base; st.base = base; }
+  if (base !== st.base) {
+    const own = st.key && st.key !== st.base;
+    if (!own) st.key = base;
+    if (remote && st.ctx && base) toast('O tom do dia mudou para ' + base + (own ? ' (você está vendo em ' + st.key + ')' : ''));
+    st.base = base;
+  }
   $('[data-el="title"]', p).innerHTML = titleHTML(so, st);
   $('[data-el="obs"]', p).innerHTML = obsHTML(st);
   $('[data-el="keys"]', p).innerHTML = keysHTML(st);
@@ -1083,10 +1101,12 @@ function navHTML(l, i) {
 function kinfoHTML(so, st) {
   const day = !!st.ctx, cf = cifraFor(so, S.inst), orig = cf.key;
   const lines = [];
-  if (!st.base) lines.push('Tom ainda não definido. Toque num tom para escolher para todos.');
-  else {
+  if (!st.base) lines.push(st.key ? `Vendo em <b>${st.key}</b>, só na sua tela` : 'Tom ainda não definido para este louvor.');
+  else if (st.key === st.base) {
     const lbl = day ? 'Tom do dia' : (so.play ? 'Tom que cantamos' : 'Tom');
     lines.push(`${lbl} <b>${st.base}</b>${cf.text && orig && st.base !== orig ? ' · cifra escrita em ' + orig : ''}`);
+  } else {
+    lines.push(`Vendo em <b>${st.key}</b>, só na sua tela · <button class="linkbtn" data-act="key" data-v="${st.base}">Voltar para ${st.base}</button>`);
   }
   if (st.key && S.inst === 'gt') {
     if (st.capo > 0) lines.push(`Capo ${st.capo} · formas de <b>${shiftKey(st.key, -st.capo)}</b>, soando em ${st.key}`);
@@ -1707,7 +1727,7 @@ function refreshPanel(p, info) {
     const st = p._st, so = songById(st.id);
     if (!so) { if (info.remote) { removePanel(p); toast('Este louvor foi excluído.'); } return; }
     if (!ch.has(so.id) && !(st.ctx && ch.has(st.ctx.list))) return;
-    refreshSongPanel(p);
+    refreshSongPanel(p, info.remote);
   }
 }
 
@@ -1799,7 +1819,9 @@ document.addEventListener('click', e => {
     case 'exit-stay': closeSheet(); break;
     case 'discard-go': { const t = discardTarget; discardTarget = null; closeSheet(); if (t) removePanel(t); break; }
 
-    case 'key': setTone(p, b.dataset.v); break;
+    case 'key': p._st.key = b.dataset.v; updateSongPanel(p); break;
+    case 'day-key': openDayKeySheet(b.dataset.list, +b.dataset.idx); break;
+    case 'day-key-set': { const c = sheetEl && sheetEl._ctx; if (c && c.dayKey) setDayKey(c.list, c.idx, b.dataset.v); break; }
     case 'capo': p._st.capo = Math.max(0, Math.min(7, p._st.capo + (+b.dataset.d))); updateSongPanel(p); break;
     case 'capo-set': p._st.capo = +b.dataset.v; updateSongPanel(p); break;
     case 'size': {

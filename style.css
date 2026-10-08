@@ -215,7 +215,11 @@ svg { flex: none; }
 .mv button { width: 34px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--accent-text); cursor: pointer; }
 .mv button svg { width: 16px; height: 16px; }
 .mv button:disabled { opacity: .3; cursor: default; }
-.srow { width: 100%; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 13px 2px; border: 0; background: none; text-align: left; color: inherit; cursor: pointer; }
+.sroww { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.kbtn { display: grid; place-items: center; min-width: 48px; min-height: 48px; padding: 0 4px; border: 0; background: none; cursor: pointer; }
+.kbtn .kmini { box-shadow: 0 0 0 0 transparent; }
+.kbtn:active .kmini { transform: scale(.94); }
+.srow { width: 100%; display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 10px; padding: 13px 2px; border: 0; background: none; text-align: left; color: inherit; cursor: pointer; }
 .srow.joined { padding-top: 0; }
 .srow .n, .emain .n { font-family: var(--f-display); font-weight: 800; font-size: 22px; line-height: 1; color: var(--muted); text-align: center; }
 .srow b { display: block; font-size: 16.5px; font-weight: 600; line-height: 1.25; }

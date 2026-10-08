@@ -420,17 +420,22 @@ async function until(fn, ms) {
     await lpg.locator('.panel [data-act="save-list"]').first().click();
     check(await until(async () => (await tt())[0] === o0[0]), 'ordem do editor salva no culto');
     check(await lpg.locator('.panel .pill.pri[data-act="edit-list"]').count() === 1, 'botão Editar amarelo');
-    /* tom: vale para todos, com desfazer */
+    /* tom do dia: muda na página do culto, para todos, com desfazer */
+    const dk = async () => ((await lpg.locator('.panel .kbtn .kmini').nth(1).textContent()) || '').trim();
+    const kA = await dk(), kB = kA === 'C' ? 'D' : 'C';
+    await lpg.locator('.panel .kbtn').nth(1).click();
+    check(/Muda para todos/.test(await lpg.locator('.sheet').textContent()), 'folha do tom do dia');
+    await lpg.locator('.sheet [data-act="day-key-set"]', { hasText: new RegExp('^' + kB + '$') }).first().click();
+    check(await until(async () => (await dk()) === kB) && /para todos/.test(await lpg.locator('#toast').textContent()), 'tom do dia muda na página do culto', [kA, kB]);
+    await lpg.click('[data-act="toast-act"]');
+    check(await until(async () => (await dk()) === kA), 'desfazer volta o tom do dia', kA);
+    /* na tela da cifra, o tom é só de quem está vendo */
     await lpg.locator('.panel [data-act="open-item"]').nth(1).click();
     await lpg.locator('.panel .kchip').first().waitFor();
-    const pk = async () => (await lpg.locator('.panel .kchip[aria-pressed="true"]').count()) ? (await lpg.locator('.panel .kchip[aria-pressed="true"]').textContent()).trim() : '';
-    const kA = await pk(), kB = kA === 'C' ? 'D' : 'C';
     await lpg.locator('.panel .kchip', { hasText: new RegExp('^' + kB + '$') }).first().click();
-    check(await until(async () => (await pk()) === kB) && /para todos/.test(await lpg.locator('#toast').textContent()), 'tom muda para todos', [kA, kB]);
-    await lpg.click('[data-act="toast-act"]');
-    check(await until(async () => (await pk()) === kA), 'desfazer volta o tom', kA);
+    check(/só na sua tela/.test(await lastPanel(lpg).locator('[data-el="kinfo"]').textContent().catch(() => '')) || /só na sua tela/.test(await lastPanel(lpg).textContent()), 'tom na tela da cifra é só seu');
     await lpg.locator('.panel [data-act="close"]').last().click();
-    await lpg.waitForTimeout(200);
+    check(await until(async () => (await dk()) === kA), 'tom do dia não muda pela tela da cifra');
     await lpg.locator('.panel [data-act="close"]').last().click();
     await lpg.waitForTimeout(200);
     await backSuite(lpg, light, 'cw');
