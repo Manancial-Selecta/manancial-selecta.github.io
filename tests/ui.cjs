@@ -45,6 +45,89 @@ const vis = async (page, sel) => page.locator(sel).first().isVisible().catch(() 
 const lastPanel = page => page.locator('.panel').last();
 
 (async () => {
+  async function backSuite(lpg, light, mode) {
+    const back = async (pg) => { pg = pg || lpg; if (mode === 'cw') await pg.keyboard.press('Escape'); else await pg.goBack(); await pg.waitForTimeout(200); };
+    const M = ' [' + mode + ']';
+    const panels = () => lpg.locator('.panel').count();
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="open-item"]').first().click();
+    await lpg.waitForSelector('.panel .cifra, .panel [data-el="cifra"]');
+    check(await panels() === 2, 'culto e louvor abertos' + M);
+    await back();
+    check(await panels() === 1 && lpg.url() === BASE, 'voltar fecha só o louvor' + M, [await panels(), lpg.url()]);
+    await back();
+    check(await panels() === 0 && lpg.url() === BASE && await lpg.locator('#app').isVisible(), 'voltar fecha o culto e continua no app' + M, [await panels(), lpg.url()]);
+    /* vários voltar seguidos, sem tocar na tela */
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="open-item"]').first().click();
+    await lpg.waitForTimeout(150);
+    await back(); await back();
+    check(await panels() === 0 && await lpg.locator('#app').isVisible() && lpg.url() === BASE, 'dois voltar seguidos ficam no app' + M);
+    await back();
+    check(/Sair do app\?/.test(await lpg.locator('.sheet').textContent()), 'terceiro voltar seguido pergunta se quer sair' + M);
+    await lpg.click('[data-act="exit-stay"]');
+    await lpg.waitForTimeout(150);
+    /* modo altar: o voltar primeiro sai do modo altar */
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="open-item"]').first().click();
+    await lpg.locator('.panel [data-act="palco"]').last().click();
+    await back();
+    check(await panels() === 2 && await lpg.locator('.panel [data-act="palco"]').last().getAttribute('aria-pressed') === 'false', 'voltar sai do modo altar' + M);
+    await back(); await back();
+    check(await panels() === 0, 'voltar duas vezes fecha tudo' + M);
+    /* editor sem alteração fecha direto; com alteração pergunta */
+    await lpg.click('[data-act="tab"][data-v="louvores"]');
+    await lpg.click('[data-act="new"]');
+    await back();
+    check(await panels() === 0, 'editor sem alteração fecha com voltar' + M);
+    await lpg.click('[data-act="new"]');
+    await lpg.fill('#f-title', 'Rascunho');
+    await back();
+    check(await panels() === 1 && /Sair sem salvar/.test(await lpg.locator('.sheet').textContent()), 'editor com alteração pergunta antes de sair' + M);
+    await lpg.click('[data-act="discard-stay"]');
+    check(await panels() === 1 && await lpg.locator('.sheet').count() === 0 && await lpg.inputValue('#f-title') === 'Rascunho', 'continuar editando mantém o que foi escrito' + M);
+    await back();
+    await back();
+    check(await panels() === 1 && await lpg.locator('.sheet').count() === 0, 'voltar com a pergunta aberta só fecha a pergunta' + M);
+    await back();
+    await lpg.click('[data-act="discard-go"]');
+    await lpg.waitForTimeout(200);
+    check(await panels() === 0 && lpg.url() === BASE, 'sair sem salvar fecha o editor' + M);
+    /* culto novo: colar a escala sem montar também conta como alteração */
+    await lpg.click('[data-act="tab"][data-v="cultos"]');
+    await lpg.click('[data-act="new-list"]');
+    await lpg.fill('#le-paste', '*ESCALA DO DOMINGO DIA 25/10*');
+    await back();
+    check(/Sair sem salvar/.test(await lpg.locator('.sheet').textContent()), 'escala colada pergunta antes de sair' + M);
+    await lpg.click('[data-act="discard-go"]');
+    /* fechar pela seta do app não deixa um voltar "morto" */
+    await lpg.click('.lcard.next');
+    await lpg.locator('.panel [data-act="close"]').click();
+    await lpg.waitForTimeout(200);
+    check(await panels() === 0 && await lpg.locator('.sheet').count() === 0, 'seta do app fecha o culto' + M);
+    /* tela inicial: o voltar pergunta antes de sair */
+    await back();
+    check(/Sair do app\?/.test(await lpg.locator('.sheet').textContent()) && lpg.url() === BASE, 'tela inicial: voltar pergunta se quer sair' + M);
+    await lpg.click('[data-act="exit-stay"]');
+    await lpg.waitForTimeout(200);
+    check(await lpg.locator('.sheet').count() === 0, 'continuar no app' + M);
+    await back();
+    check(/Sair do app\?/.test(await lpg.locator('.sheet').textContent()), 'pergunta de novo no próximo voltar' + M);
+    await lpg.goBack().catch(() => null); await lpg.waitForTimeout(300);
+    check(lpg.url() !== BASE, 'voltar de novo sai do app' + M, lpg.url());
+    await lpg.goto(BASE);
+    await lpg.waitForSelector('#app:not([hidden])');
+    /* link do WhatsApp abre o culto; o voltar fecha e continua no app */
+    const lp9 = await newPage(light, errs);
+    await lp9.goto(BASE + '#l20261009');
+    await lp9.waitForSelector('.panel .hero');
+    await lp9.click('.panel .hero');
+    await back(lp9);
+    check(await lp9.locator('.panel').count() === 0 && await lp9.locator('#app').isVisible() && await lp9.locator('.sheet').count() === 0, 'link do culto: voltar fica no app' + M, lp9.url());
+    await back(lp9);
+    check(/Sair do app\?/.test(await lp9.locator('.sheet').textContent()), 'link do culto: depois pergunta se quer sair' + M);
+    await lp9.close();
+  }
   const srv = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'], { cwd: ROOT, stdio: 'ignore' });
   await sleep(700);
   const browser = await chromium.launch();
@@ -309,77 +392,21 @@ const lastPanel = page => page.locator('.panel').last();
     const overflow = await lpg.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     check(!overflow, 'sem rolagem para o lado no celular pequeno');
 
-    /* ----- botão voltar do celular ----- */
-    const back = async () => { await lpg.goBack(); await lpg.waitForTimeout(200); };
-    const panels = () => lpg.locator('.panel').count();
-    await lpg.click('.lcard.next');
-    await lpg.locator('.panel [data-act="open-item"]').first().click();
-    await lpg.waitForSelector('.panel .cifra, .panel [data-el="cifra"]');
-    check(await panels() === 2, 'culto e louvor abertos');
-    await back();
-    check(await panels() === 1 && lpg.url() === BASE, 'voltar fecha só o louvor', [await panels(), lpg.url()]);
-    await back();
-    check(await panels() === 0 && lpg.url() === BASE && await lpg.locator('#app').isVisible(), 'voltar fecha o culto e continua no app', [await panels(), lpg.url()]);
-    /* modo altar: o voltar primeiro sai do modo altar */
-    await lpg.click('.lcard.next');
-    await lpg.locator('.panel [data-act="open-item"]').first().click();
-    await lpg.locator('.panel [data-act="palco"]').last().click();
-    await back();
-    check(await panels() === 2 && await lpg.locator('.panel [data-act="palco"]').last().getAttribute('aria-pressed') === 'false', 'voltar sai do modo altar');
-    await back(); await back();
-    check(await panels() === 0, 'voltar duas vezes fecha tudo');
-    /* editor sem alteração fecha direto; com alteração pergunta */
-    await lpg.click('[data-act="tab"][data-v="louvores"]');
-    await lpg.click('[data-act="new"]');
-    await back();
-    check(await panels() === 0, 'editor sem alteração fecha com voltar');
-    await lpg.click('[data-act="new"]');
-    await lpg.fill('#f-title', 'Rascunho');
-    await back();
-    check(await panels() === 1 && /Sair sem salvar/.test(await lpg.locator('.sheet').textContent()), 'editor com alteração pergunta antes de sair');
-    await lpg.click('[data-act="discard-stay"]');
-    check(await panels() === 1 && await lpg.locator('.sheet').count() === 0 && await lpg.inputValue('#f-title') === 'Rascunho', 'continuar editando mantém o que foi escrito');
-    await back();
-    await back();
-    check(await panels() === 1 && await lpg.locator('.sheet').count() === 0, 'voltar com a pergunta aberta só fecha a pergunta');
-    await back();
-    await lpg.click('[data-act="discard-go"]');
-    await lpg.waitForTimeout(200);
-    check(await panels() === 0 && lpg.url() === BASE, 'sair sem salvar fecha o editor');
-    /* culto novo: colar a escala sem montar também conta como alteração */
-    await lpg.click('[data-act="tab"][data-v="cultos"]');
-    await lpg.click('[data-act="new-list"]');
-    await lpg.fill('#le-paste', '*ESCALA DO DOMINGO DIA 25/10*');
-    await back();
-    check(/Sair sem salvar/.test(await lpg.locator('.sheet').textContent()), 'escala colada pergunta antes de sair');
-    await lpg.click('[data-act="discard-go"]');
-    /* fechar pela seta do app não deixa um voltar "morto" */
-    await lpg.click('.lcard.next');
-    await lpg.locator('.panel [data-act="close"]').click();
-    await lpg.waitForTimeout(200);
-    check(await panels() === 0 && await lpg.locator('.sheet').count() === 0, 'seta do app fecha o culto');
-    /* tela inicial: o voltar pergunta antes de sair */
-    await back();
-    check(/Sair do app\?/.test(await lpg.locator('.sheet').textContent()) && lpg.url() === BASE, 'tela inicial: voltar pergunta se quer sair');
-    await lpg.click('[data-act="exit-stay"]');
-    await lpg.waitForTimeout(200);
-    check(await lpg.locator('.sheet').count() === 0 && await lpg.evaluate(() => history.state && history.state.lmBack === 1), 'continuar no app');
-    await back();
-    check(/Sair do app\?/.test(await lpg.locator('.sheet').textContent()), 'pergunta de novo no próximo voltar');
-    await lpg.goBack().catch(() => null); await lpg.waitForTimeout(300);
-    check(lpg.url() !== BASE, 'voltar de novo sai do app', lpg.url());
-    await lpg.goto(BASE);
-    await lpg.waitForSelector('#app:not([hidden])');
-    /* link do WhatsApp abre o culto; o voltar fecha e continua no app */
-    const lp9 = await newPage(light, errs);
-    await lp9.goto(BASE + '#l20261009');
-    await lp9.waitForSelector('.panel .hero');
-    await lp9.click('.panel .hero');
-    await lp9.goBack(); await lp9.waitForTimeout(200);
-    check(await lp9.locator('.panel').count() === 0 && await lp9.locator('#app').isVisible() && await lp9.locator('.sheet').count() === 0, 'link do culto: voltar fica no app', lp9.url());
-    await lp9.goBack(); await lp9.waitForTimeout(200);
-    check(/Sair do app\?/.test(await lp9.locator('.sheet').textContent()), 'link do culto: depois pergunta se quer sair');
-    await lp9.close();
+    await backSuite(lpg, light, 'cw');
+    const hist = await browser.newContext({ viewport: { width: 360, height: 740 }, serviceWorkers: 'block' });
+    await hist.addInitScript(() => { delete window.CloseWatcher; });
+    await hist.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+    await hist.route(BASE + 'data/prototipo.json', r => r.fulfill({ status: 200, contentType: 'application/json', body: FIXTURE }));
+    await hist.clock.setFixedTime(TODAY);
+    await hist.route(BASE + 'src/config.js', r => r.fulfill({ status: 200, contentType: 'text/javascript', body: "export const FIREBASE = { apiKey: '' };" }));
+    const hpg = await newPage(hist, errs);
+    await hpg.goto(BASE);
+    await hpg.fill('#g-code', 'manancial');
+    await hpg.fill('#g-name', 'Teste');
+    await hpg.click('[data-act="g-join"]');
+    await hpg.waitForSelector('#app:not([hidden])');
+    await backSuite(hpg, hist, 'hist');
+    await hist.close();
     await lpg.click('[data-act="tab"][data-v="louvores"]');
     await lpg.click('[data-act="new"]');
     await lpg.fill('#f-title', 'Teste Claro');

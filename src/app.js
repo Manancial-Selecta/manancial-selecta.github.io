@@ -330,10 +330,32 @@ const backLayers = () => stack.length + (sheetEl ? 1 : 0) + (menuEl ? 1 : 0);
 const appOpen = () => { const a = $('#app'); return !!a && !a.hidden && !$('#gate'); };
 /* o Chrome ignora entradas do histórico criadas antes de a pessoa tocar na tela */
 const touchedPage = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
+/* Chrome no Android (120+): CloseWatcher recebe o voltar do celular sem mexer no histórico.
+   Fica sempre um vigia ativo; cada voltar fecha só o que está por cima e um vigia novo é criado. */
+const HAS_CW = typeof window.CloseWatcher === 'function';
+let watcher = null, cwBusy = false;
+function wantBack() { return appOpen() && !exitAsk && (backLayers() > 0 || touchedPage()); }
+function syncWatcher() {
+  const need = wantBack();
+  if (!need && watcher) { const w = watcher; watcher = null; w.destroy(); }
+  else if (need && !watcher) {
+    try {
+      const w = new CloseWatcher();
+      w.onclose = () => {
+        if (watcher === w) watcher = null;
+        if (cwBusy) return; /* vários vigias fechados juntos contam como um voltar só */
+        cwBusy = true;
+        setTimeout(() => { cwBusy = false; goBack(); queueSyncBack(); }, 0);
+      };
+      watcher = w;
+    } catch (e) { /* sem vigia: o voltar segue o padrão do celular */ }
+  }
+}
 function syncBack() {
   backQueued = false;
+  if (HAS_CW) { syncWatcher(); return; }
   if (backSkip) return; /* esperando o histórico voltar; o popstate chama de novo */
-  const need = appOpen() && !exitAsk && (backLayers() > 0 || touchedPage());
+  const need = wantBack();
   try {
     if (need && !backGuard) { history.pushState({ lmBack: 1 }, '', location.href); backGuard = true; }
     else if (!need && backGuard && !exitAsk) { backGuard = false; backSkip++; history.back(); }
@@ -371,13 +393,14 @@ function askExit() {
   exitAsk = true;
 }
 window.addEventListener('popstate', () => {
+  if (HAS_CW) return;
   if (backSkip) { backSkip--; queueSyncBack(); return; }
   backGuard = false;
   goBack();
   queueSyncBack();
 });
 new MutationObserver(queueSyncBack).observe(document.body, { childList: true });
-['click', 'keydown'].forEach(t => document.addEventListener(t, () => { if (!backGuard) queueSyncBack(); }, true));
+['click', 'keydown'].forEach(t => document.addEventListener(t, () => { if (HAS_CW ? !watcher : !backGuard) queueSyncBack(); }, true));
 /* guarda como o editor estava antes da primeira mexida */
 ['input', 'change', 'click'].forEach(t => document.addEventListener(t, e => {
   const p = e.target && e.target.closest && e.target.closest('.panel');
@@ -1017,6 +1040,7 @@ function startScroll(p) {
 async function togglePalco(p) {
   const st = p._st;
   st.palco = !st.palco;
+  queueSyncBack();
   if (st.palco) stopVideo(p);
   updateSongPanel(p);
   try {
@@ -1799,7 +1823,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'g-code') { e.preventDefault(); const n = $('#g-name'); if (n) n.focus(); return; }
   if (e.key === 'Enter' && id === 'g-name') { e.preventDefault(); const b = $('[data-act="g-join"], [data-act="g-setup"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'rn-name') { e.preventDefault(); const b = $('[data-act="rename-go"]'); if (b) b.click(); return; }
-  if (e.key === 'Escape' && (backLayers() > 0)) goBack();
+  if (e.key === 'Escape' && !HAS_CW && backLayers() > 0) goBack(); /* no Chrome, o Esc chega pelo vigia */
 });
 
 window.addEventListener('resize', () => { closeMenu(); stack.forEach(p => { if (p._kind === 'song') fitCifra(p); }); });
@@ -1838,4 +1862,4 @@ export async function startApp(cfg) {
 }
 
 /* para os testes: estado interno */
-export const _debug = { S, get DATA() { return DATA; }, get STORE() { return STORE; } };
+export const _debug = { S, get DATA() { return DATA; }, get STORE() { return STORE; }, get backWatch() { return HAS_CW ? !!watcher : backGuard; } };
