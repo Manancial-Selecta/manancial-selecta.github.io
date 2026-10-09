@@ -48,6 +48,8 @@ App do ministério **Adoração & Artes Manancial Selecta**: cultos, louvores, c
 
 ## Administração
 
+> **Versão 1.3 (Escala):** cole de novo o arquivo `firestore.rules` em Firebase → Firestore → **Regras** → **Publicar**. Sem isso, a escala não grava.
+>
 > Depois de atualizar o app para a versão 1.1, cole de novo o arquivo `firestore.rules` em Firebase → Firestore → **Regras** → **Publicar** (a senha de administrador e o histórico precisam das regras novas).
 
 - **Mudar o código:** botão com suas iniciais → **Código do ministério**. Quem já entrou continua com acesso.
@@ -56,6 +58,11 @@ App do ministério **Adoração & Artes Manancial Selecta**: cultos, louvores, c
 - **Outra pessoa administradora pelo Firebase (alternativa):** Firestore → `members` → documento da pessoa → mude `admin` para `true`.
 - **Histórico (7 dias):** iniciais → **Histórico**. Mostra quem abriu o app em cada dia e o que foi alterado (cultos, louvores, tons, ordem, ensaio, código e senha). Só quem administra vê. O que passa de 8 dias é apagado sozinho.
 - **Enviar o app para alguém:** iniciais → **Enviar o app no WhatsApp** (todos podem). A mensagem leva só o link; o código a pessoa pede para a liderança.
+- **Escala (aba de baixo, à direita):** só quem administra monta; os membros só veem o que foi salvo.
+  - **Mensal:** um domingo por vez, com caixas grandes (Ministro, Backs, Músicos, Mídia, Som). Embaixo, a grade do mês. **Salvar escala** mostra para todos; depois disso, cada mudança aparece na hora. **Enviar imagem e mensagem** manda a tabela e o texto juntos no WhatsApp.
+  - **Domingo:** já vem com as pessoas da Mensal; escolha louvores, dízimos, ensaio e aviso. **Salvar escala** cria (ou atualiza) o culto na aba Cultos.
+  - **Sexta e outros:** **Adicionar culto** (Sexta, Jovens, Mulheres ou Outro) e monte do mesmo jeito.
+  - **Membros e funções** (no fim da aba): marque o que cada pessoa faz; elas aparecem primeiro nas caixas.
 - **Importar o protótipo de novo:** iniciais → **Importar dados do protótipo** (só para quem administra).
 
 ## Limites do plano gratuito
@@ -74,7 +81,8 @@ Não tem etapa de build: são arquivos estáticos (HTML, CSS e módulos JavaScri
 | `sw.js` | modo offline. **Mude `VERSION` a cada publicação**: quem estiver usando vê "Tem uma versão nova do app" |
 | `src/main.js` | começo: modo offline, aviso de versão nova, abre o app |
 | `src/config.js` | dados do Firebase (vazio = modo demonstração, tudo só no aparelho) |
-| `src/app.js` | telas: Cultos, Louvores, página do culto, louvor, editores, entrada |
+| `src/app.js` | telas: Cultos, Louvores, Escala, página do culto, louvor, editores, entrada |
+| `src/escala-ui.js` | partes da Escala: caixas, grade, mensagens do WhatsApp e imagem do mês |
 | `src/store-firebase.js` | dados em tempo real (Firebase 12.19.0 carregado do gstatic), entrada com código, fila sem internet |
 | `src/store-local.js` | modo demonstração (sem Firebase) |
 | `src/model.js` | formato dos louvores, cultos e preferências |
@@ -85,13 +93,14 @@ Não tem etapa de build: são arquivos estáticos (HTML, CSS e módulos JavaScri
 | `src/youtube.js` | vídeo do YouTube dentro do app |
 | `firestore.rules` | regras de acesso do banco |
 
-**Banco (Firestore):** `songs/{id}` (louvor: título, versão, tom, `cifra` e `cifraKb` de teclado, `yt`...), `lists/{id}` (culto: data, ministro, tipo, ensaio, louvores, dízimos, aviso), `meta/app` (nomes e horários de ensaio lembrados), `members/{uid}` (quem entrou), `config/access` (código, só as regras leem), `config/admin` (senha de administrador, só as regras leem), `log/{id}` (histórico: quem abriu e o que mudou; só administrador lê) e `config/public`. Excluir marca `deleted: true` (permite desfazer). Cada gravação leva `at` (hora do servidor) e `by` (nome de quem alterou).
+**Banco (Firestore):** `songs/{id}` (louvor: título, versão, tom, `cifra` e `cifraKb` de teclado, `yt`...), `lists/{id}` (culto: data, ministro, tipo, ensaio, louvores, dízimos, aviso), `meta/app` (nomes e horários de ensaio lembrados), `members/{uid}` (quem entrou), `config/access` (código, só as regras leem), `config/admin` (senha de administrador, só as regras leem), `escala/{id}` (escala de um dia: `data`+`tipo`, pessoas por função, louvores do rascunho, `pub` salva; `escala/membros` guarda as funções de cada membro; só administrador grava), `log/{id}` (histórico: quem abriu e o que mudou; só administrador lê) e `config/public`. Excluir marca `deleted: true` (permite desfazer). Cada gravação leva `at` (hora do servidor) e `by` (nome de quem alterou).
 
 **Testes** (precisam de Node e do Playwright):
 
 ```
 node tests/unit.mjs       # escala, mensagem do WhatsApp, acordes, dados
 node tests/ui.cjs         # telas no modo demonstração
+node tests/escala.cjs     # aba Escala no modo demonstração
 node tests/firebase.cjs   # tempo real, entrada com código, sem internet (Firebase imitado)
 node tests/offline.cjs    # abrir sem internet e atualizar versão
 ```

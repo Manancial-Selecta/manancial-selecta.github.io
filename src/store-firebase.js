@@ -3,7 +3,7 @@
    - Louvores e cultos ficam guardados no aparelho: abrem na hora e funcionam sem internet.
    - Ao abrir, só baixa o que mudou desde a última vez (economiza a cota gratuita).
    - O que alguém altera aparece na hora para todos. */
-import { normSong, normList, normMeta, fromPrototype, songDoc, listDoc, sameJSON } from './model.js';
+import { normSong, normList, normMeta, normEsc, escDoc, fromPrototype, songDoc, listDoc, sameJSON } from './model.js';
 import { storeGet, storeSet, storeDel, today } from './util.js';
 import { normCode } from './store-local.js';
 
@@ -22,10 +22,10 @@ const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeo
 export function createFirebaseStore(cfg) {
   let A = null, F = null, auth = null, db = null, user = null;
   let me = readMe();
-  const state = { songs: new Map(), lists: new Map(), meta: normMeta({}) };
+  const state = { songs: new Map(), lists: new Map(), escala: new Map(), meta: normMeta({}) };
   const subs = new Set(), statusSubs = new Set();
   const status = { online: navigator.onLine !== false, pending: 0, synced: false, revoked: false, failed: 0 };
-  const syncMax = { songs: 0, lists: 0 };
+  const syncMax = { songs: 0, lists: 0, escala: 0 };
   let unsubs = [], started = false, flushT = null, changed = new Set(), changedRemote = false;
 
   function readMe() {
@@ -40,7 +40,7 @@ export function createFirebaseStore(cfg) {
   window.addEventListener('offline', () => { status.online = false; status.synced = false; emitStatus(); });
 
   function view() {
-    return { songs: [...state.songs.values()], lists: [...state.lists.values()], people: state.meta.people.slice(), prefs: JSON.parse(JSON.stringify(state.meta.prefs)) };
+    return { songs: [...state.songs.values()], lists: [...state.lists.values()], escala: [...state.escala.values()], people: state.meta.people.slice(), prefs: JSON.parse(JSON.stringify(state.meta.prefs)) };
   }
   function flush(remote) {
     if (remote) changedRemote = true;
@@ -93,7 +93,7 @@ export function createFirebaseStore(cfg) {
     if (!d) return;
     const map = state[col];
     if (d.deleted) { if (map.delete(snap.id)) changed.add(snap.id); return; }
-    const o = col === 'songs' ? normSong(Object.assign({}, d, { id: snap.id })) : normList(Object.assign({}, d, { id: snap.id }), state.meta.prefs);
+    const o = col === 'songs' ? normSong(Object.assign({}, d, { id: snap.id })) : col === 'escala' ? normEsc(Object.assign({}, d, { id: snap.id })) : normList(Object.assign({}, d, { id: snap.id }), state.meta.prefs);
     if (!sameJSON(map.get(o.id), o)) { map.set(o.id, o); changed.add(o.id); }
   }
   /* "since" é lido ANTES do que está guardado: assim nada que chegou no meio do caminho fica de fora */
@@ -102,13 +102,15 @@ export function createFirebaseStore(cfg) {
       const [s, l] = await Promise.all(['songs', 'lists'].map(c => F.getDocsFromCache(F.collection(db, c))));
       s.forEach(d => upsert('songs', d));
       l.forEach(d => upsert('lists', d));
+      try { (await F.getDocsFromCache(F.collection(db, 'escala'))).forEach(d => upsert('escala', d)); } catch (e) { since.escala = 0; }
       try { const m = await F.getDocFromCache(F.doc(db, 'meta', 'app')); if (m.exists()) state.meta = normMeta(m.data()); } catch (e) { /* ainda não guardado */ }
       /* se o aparelho perdeu parte do que estava guardado, baixa tudo de novo */
       const had = Number(storeGet('localStorage', COUNT_KEY) || 0);
-      if (s.size + l.size < had) { since.songs = 0; since.lists = 0; }
+      if (s.size + l.size < had) { since.songs = 0; since.lists = 0; since.escala = 0; }
     } catch (e) {
       since.songs = 0;
       since.lists = 0;
+      since.escala = 0;
     }
     changed.add('meta');
     flush(true);
@@ -133,7 +135,7 @@ export function createFirebaseStore(cfg) {
         if (nm.name !== me.name || nm.admin !== me.admin) { saveMe(nm); changed.add('me'); flush(true); }
       }, onListenError));
     }
-    ['songs', 'lists'].forEach(col => {
+    ['songs', 'lists', 'escala'].forEach(col => {
       syncMax[col] = since[col];
       /* margem de 5 minutos: o que outra pessoa salvou bem perto da última sincronização não fica de fora */
       const from = Math.max(0, syncMax[col] - 300000);
@@ -152,7 +154,7 @@ export function createFirebaseStore(cfg) {
         status.synced = !snap.metadata.fromCache;
         emitStatus();
         flush(true);
-      }, onListenError));
+      }, col === 'escala' ? () => {} : onListenError));
     });
     unsubs.push(F.onSnapshot(F.doc(db, 'meta', 'app'), snap => {
       if (!snap.exists()) return;
@@ -164,7 +166,7 @@ export function createFirebaseStore(cfg) {
     if (started) return;
     started = true;
     status.revoked = false;
-    const since = { songs: Number(storeGet('localStorage', SYNC_KEY('songs')) || 0), lists: Number(storeGet('localStorage', SYNC_KEY('lists')) || 0) };
+    const since = { songs: Number(storeGet('localStorage', SYNC_KEY('songs')) || 0), lists: Number(storeGet('localStorage', SYNC_KEY('lists')) || 0), escala: Number(storeGet('localStorage', SYNC_KEY('escala')) || 0) };
     loadCache(since).then(() => { if (started) listen(since); });
   }
   function stop() {
@@ -206,6 +208,16 @@ export function createFirebaseStore(cfg) {
       if (!sameJSON(state.lists.get(li.id), li)) changed.add(li.id);
       state.lists.set(li.id, li);
       writes.push({ ref: F.doc(db, 'lists', li.id), data: Object.assign(listDoc(li), { by, at, deleted: false }) });
+    });
+    (x.escala || []).forEach(e => {
+      const es = normEsc(Object.assign({}, e, { by }));
+      if (!sameJSON(state.escala.get(es.id), es)) changed.add(es.id);
+      state.escala.set(es.id, es);
+      writes.push({ ref: F.doc(db, 'escala', es.id), data: Object.assign(escDoc(es), { by, at, deleted: false }) });
+    });
+    (x.delEscala || []).forEach(id => {
+      if (state.escala.delete(id)) changed.add(id);
+      writes.push({ ref: F.doc(db, 'escala', id), data: { deleted: true, by, at }, merge: true });
     });
     (x.delSongs || []).forEach(id => {
       if (state.songs.delete(id)) changed.add(id);
@@ -322,7 +334,7 @@ export function createFirebaseStore(cfg) {
     async leave() {
       stop();
       saveMe(null);
-      ['songs', 'lists'].forEach(c => storeDel('localStorage', SYNC_KEY(c)));
+      ['songs', 'lists', 'escala'].forEach(c => storeDel('localStorage', SYNC_KEY(c)));
       storeDel('localStorage', COUNT_KEY);
       try { await A.signOut(auth); } catch (e) { /* ok */ }
       try { await F.terminate(db); await F.clearIndexedDbPersistence(db); } catch (e) { /* ok */ }

@@ -72,6 +72,7 @@ function canWrite(before, after, path, u) {
   }
   if (col === 'config' && id === 'public') return !!(after['members/' + u] && after['members/' + u].admin === true);
   if (col === 'config' && id === 'admin') return member(before, u) && before['members/' + u].admin === true && typeof nd.pass === 'string' && nd.pass.length >= 6 && nd.by === u;
+  if (col === 'escala') return member(before, u) && before['members/' + u].admin === true;
   if (col === 'log') {
     if (!nd) return member(before, u) && before['members/' + u].admin === true; /* apagar */
     if (before[path]) return false;

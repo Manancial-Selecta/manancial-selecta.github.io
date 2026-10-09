@@ -9,6 +9,8 @@ import { lyricsOf, hasSimple } from '../src/domain.js';
 import { stretch, semis } from '../src/stretch.js';
 import { fromPrototype, normSong, normList } from '../src/model.js';
 import { ytId } from '../src/youtube.js';
+import { normEsc } from '../src/model.js';
+import { dayMsg, monthMsg, dateOptions, daysOf, sameName, rolesOf, viewOf, listFromView, escNew } from '../src/escala-ui.js';
 
 let fails = 0, count = 0;
 const eq = (got, want, name) => {
@@ -148,6 +150,44 @@ eq(ytId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10'), 'dQw4w9WgXcQ', 'lin
 eq(ytId('https://m.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ', 'shorts');
 eq(ytId('https://music.youtube.com/watch?list=x&v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ', 'youtube music');
 eq(ytId('não é link'), '', 'texto qualquer');
+
+/* ===== Escala ===== */
+{
+  const songs = [{ id: 'a', title: 'Oceanos', version: '', keys: {} }, { id: 'b', title: 'Gratidão', version: 'Morada', keys: {} }];
+  const songById = id => songs.find(s => s.id === id);
+  const H = { songById, autoKey: () => 'G', newListId: d => 'l' + d.replace(/-/g, ''), listExists: id => id === 'l20261011', appUrl: 'https://x/', me: 'Carla' };
+  const e = normEsc({ id: '2026-10-11dom', date: '2026-10-11', kind: 'dom', slots: { min: 'Marcos', v0: 'Carla', v1: 'Bia', tec: 'Carla', bai: 'Davi', som: 'Paulo' } });
+  eq(Object.keys(e.slots).length, 11, 'escala tem todas as funções');
+  eq(normEsc({ id: 'membros', people: [{ n: 'Ana', f: ['min', 'xx'] }, { n: 'ana', f: [] }] }).people, [{ n: 'Ana', f: ['min'] }], 'membros sem repetir e só funções válidas');
+  const v = { items: ['a', '', 'b'], diz: 'b', reh: { day: 'same', time: '15:45' }, aviso: 'chegar cedo' };
+  const l = listFromView(e, v, null, H);
+  eq([l.id, l.minister, l.items.map(i => i.songId), l.diz.songId, l.reh, l.aviso], ['l20261011', 'Marcos', ['a', 'b'], 'b', { date: '2026-10-11', time: '15:45' }, 'chegar cedo'], 'culto montado pela escala');
+  eq(l.kind, '', 'domingo comum');
+  const m = dayMsg(e, l, H);
+  eq(m.split('\n').slice(0, 5), ['*ESCALA DO DOMINGO DIA 11/10*', '', '*MINISTRO* : MARCOS', '• CARLA', '• BIA'], 'mensagem do dia: ministro e backs');
+  ok(/\*INSTRUMENTISTAS\*\n\n\*TECLADO\* : CARLA\n\*BAIXO\* : DAVI/.test(m), 'instrumentistas na ordem da líder');
+  ok(/\*SOM\* : PAULO/.test(m) && !/MÍDIA/.test(m), 'só o que foi preenchido');
+  ok(/\*ENSAIO\* : DOMINGO 11\/10 ÀS 15H45/.test(m), 'ensaio');
+  ok(/\*LOUVORES\* :\n\n1\) OCEANOS \(\*TOM G\* \)\n2\) GRATIDÃO \(MORADA - \*TOM G\* \)/.test(m), 'louvores com tom');
+  ok(/\*DÍZIMOS\* : GRATIDÃO/.test(m) && /⚠️ CHEGAR CEDO/.test(m) && /https:\/\/x\/#l20261011$/.test(m), 'dízimos, aviso e link');
+  const ceia = normEsc({ id: '2026-10-04dom', date: '2026-10-04', kind: 'dom', slots: {} });
+  eq(dayMsg(ceia, null, H).split('\n')[0], '*ESCALA DO DOMINGO DIA 04/10 - CULTO DE CEIA*', 'ceia no título');
+  eq(dayMsg(normEsc({ id: 'x', date: '2026-10-16', kind: 'sex', slots: {} }), null, H).split('\n')[0], '*ESCALA DA SEXTA-FEIRA DIA 16/10*', 'sexta no título');
+  eq(dayMsg(normEsc({ id: 'x', date: '2026-10-17', kind: 'jovens', slots: {} }), null, H).split('\n')[0], '*ESCALA DO SÁBADO DIA 17/10 - CULTO DE JOVENS*', 'jovens no título');
+  ok(/https:\/\/x\/$/.test(dayMsg(ceia, null, H)), 'sem culto, manda o link do app');
+  const mm = monthMsg('2026-10', (d, k) => d === '2026-10-11' && k === 'dom' ? e : null, 'https://x/');
+  ok(/DOMINGOS DE OUTUBRO/.test(mm) && /\*DOMINGO 04\/10\* · CULTO DE CEIA/.test(mm) && /\*BACKS\* : CARLA, BIA/.test(mm), 'mensagem do mês');
+  eq(daysOf('2026-11', 0), ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-22', '2026-11-29'], 'domingos do mês');
+  ok(sameName('Júlia', 'julia souza') && !sameName('Ana', 'Bia') && !sameName('', 'x'), 'mesmo nome');
+  eq(rolesOf(e, 'Carla'), ['Back', 'Teclado'], 'funções da pessoa no dia');
+  eq(dateOptions('sex', [], '2026-10-07', [{ date: '2026-10-09', kind: '' }]).slice(0, 2), ['2026-10-16', '2026-10-23'], 'sexta: depois da última sexta');
+  eq(dateOptions('jovens', [{ id: '2026-10-10jovens', kind: 'jovens', date: '2026-10-10' }], '2026-10-07').slice(0, 3), ['2026-10-11', '2026-10-16', '2026-10-17'], 'outros: sexta, sábado e domingo depois do último');
+  const lst = [{ id: 'l20261011', date: '2026-10-11', kind: '', minister: 'M', items: [{ songId: 'a' }], diz: null, reh: { date: '2026-10-10', time: '19:00' }, aviso: '' }];
+  const vv = viewOf(escNew('2026-10-11', 'dom'), lst, {}, 0);
+  eq([vv.items, vv.reh, vv.live], [['a', '', ''], { day: 'before', time: '19:00' }, null], 'sem rascunho, começa pelo culto que já existe');
+  const v2 = viewOf(Object.assign(escNew('2026-10-16', 'sex'), {}), [], {}, 0);
+  eq([v2.items, v2.reh], [['', '', ''], { day: 'same', time: '19:00' }], 'sexta nova: 3 louvores e ensaio 19h');
+}
 
 console.log(fails ? `\n${fails} de ${count} testes falharam` : `TUDO OK (${count} testes)`);
 process.exit(fails ? 1 : 0);

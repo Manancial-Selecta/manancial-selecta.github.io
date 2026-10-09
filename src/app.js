@@ -3,13 +3,14 @@
    cifra embaixo (violão ou teclado, com os desenhos dos acordes); editores do culto e do louvor.
    Todos os membros podem editar. Os dados vêm do armazenamento: Firebase (real) ou demonstração. */
 import { MAJOR_KEYS, MINOR_KEYS, keyInfo, keyByPc, shiftKey, capoHint, chordTok, NEUTRAL_RE, analyzeLine, inlineToTwoLines, processCifra, countChordLines, detectKey } from './music.js';
-import { $, $$, esc, norm, normKey, byTitle, clone, storeGet, storeSet, uid, isIso, dObj, isoOf, today, wd, wdShort, dm, longDate, relDay, hm, MO, titleCase, initials, mergeNames, daysBetween } from './util.js';
+import { $, $$, esc, norm, normKey, byTitle, clone, storeGet, storeSet, uid, isIso, dObj, isoOf, today, addDays, wd, wdShort, dm, longDate, relDay, hm, MO, titleCase, initials, mergeNames, daysBetween } from './util.js';
 import { parseMessage } from './parse.js';
 import { KIND_CHIPS, defaultKind, cultoName, REH_FIXED, isFixedReh, rehKey, defaultReh, rehText, hasCifra, hasSimple, cifraFor, lyricsOf, origKey, showKey, listSeq, groupItems, posOf, waText } from './domain.js';
 import { guitarShapes, guitarSVG, keyboardSVG, keyboardNotes, chordsOfLines } from './chords.js';
 import { ytId, ytWatch, ytThumb, ytEmbed, ytSearch } from './youtube.js';
 import { ICON } from './icons.js';
 import { createLocalStore } from './store-local.js';
+import { EFN, escNew, escLabel, daysOf, monName, listFor, viewOf, listFromView, dayMsg, monthMsg, headHTML, navHTML as escNavHTML, fieldsHTML, cultoEditHTML, readCultoHTML, gridHTML, mineHTML, weekListHTML, eid, dateSelectHTML, monthImage } from './escala-ui.js';
 
 /* ===== Estado ===== */
 const S = {
@@ -21,7 +22,7 @@ const S = {
   status: { online: true, pending: 0, synced: true }
 };
 let CFG = {}, STORE = null, UNSUB = null;
-let DATA = { songs: [], lists: [], people: [], prefs: { reh: {} } };
+let DATA = { songs: [], lists: [], escala: [], people: [], prefs: { reh: {} } };
 let pendingHash = '';
 
 const songById = id => DATA.songs.find(s => s.id === id);
@@ -64,7 +65,7 @@ function matchSong(title, version, extra) {
 /* ===== Gravar: aparece na hora e vai para todos ===== */
 function apply(ops, log) {
   const changed = new Set();
-  ['songs', 'lists'].forEach(k => (ops[k] || []).forEach(x => changed.add(x.id)));
+  ['songs', 'lists', 'escala'].forEach(k => (ops[k] || []).forEach(x => changed.add(x.id)));
   ['delSongs', 'delLists'].forEach(k => (ops[k] || []).forEach(id => changed.add(id)));
   STORE.commit(ops);
   DATA = STORE.view();
@@ -163,10 +164,12 @@ function shell() {
       </div>
       <div id="list"></div>
     </section>
+    <section id="tab-escala" hidden></section>
   </div>
   <nav class="tabbar" id="tabbar" aria-label="Seções" hidden><div class="in">
     <button data-act="tab" data-v="cultos">${ICON.cal}<span>Cultos</span></button>
     <button data-act="tab" data-v="louvores">${ICON.music}<span>Louvores</span></button>
+    <button data-act="tab" data-v="escala">${ICON.users}<span>Escala</span></button>
   </div></nav>
   <div class="boot" id="boot" role="status"><span class="spin" aria-hidden="true"></span><span>Abrindo…</span></div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>`;
@@ -181,6 +184,7 @@ function renderTabs() {
   $$('.tabbar button').forEach(b => { if (b.dataset.v === S.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   $('#tab-cultos').hidden = S.tab !== 'cultos';
   $('#tab-louvores').hidden = S.tab !== 'louvores';
+  $('#tab-escala').hidden = S.tab !== 'escala';
 }
 
 function cardHTML(l, cls) {
@@ -261,6 +265,7 @@ function renderAll() {
   renderTabs();
   renderCultos();
   renderSongs();
+  renderEscala();
 }
 
 function renderStatus(s) {
@@ -1900,6 +1905,374 @@ function deleteSong(p) {
   toast('Louvor excluído', { label: 'Desfazer', fn: () => apply({ songs: [old], lists: oldLists }, { what: 'Desfez a exclusão do louvor ' + old.title }) });
 }
 
+/* ===== Escala: a líder (administrador) monta; os membros só veem o que foi salvo ===== */
+const ES = { sub: 'mes', ym: '', step: 1, dstep: 1, blank: {}, newBox: null, hold: false };
+const ymOf = iso => iso.slice(0, 7);
+const escId = (date, kind, name) => date + kind + (kind === 'outro' ? '-' + normKey(name).slice(0, 30) : '');
+const escById = id => (DATA.escala || []).find(e => e.id === id);
+const escGet = (date, kind, name) => escById(escId(date, kind, name || ''));
+const escPubGet = (date, kind) => { const e = escGet(date, kind); return e && e.pub ? e : null; };
+const escOf = (date, kind, name) => escGet(date, kind, name) || Object.assign(escNew(date, kind, name), { id: escId(date, kind, name || '') });
+const escH = () => ({ songById, autoKey, newListId: listIdFor, listExists: id => !!listById(id), appUrl: appUrl(), me: meName() });
+const monthPub = ym => daysOf(ym, 0).some(iso => { const e = escGet(iso, 'dom'); return !!(e && e.pub); });
+const escLbl = e => (e.kind === 'dom' ? 'domingo' : (escLabel(e) || 'culto').toLowerCase()) + ' ' + dm(e.date);
+const escView = e => viewOf(e, DATA.lists, DATA.prefs, ES.blank[e.id] || 0);
+function roster() {
+  const doc = escById('membros');
+  if (doc && doc.up) return doc.people.slice().sort((a, b) => a.n.localeCompare(b.n, 'pt'));
+  return allPeople().map(n => ({ n, f: [] }));
+}
+function escMonthDocs(adm) {
+  return (DATA.escala || []).filter(e => e.date && ymOf(e.date) === ES.ym && (adm || e.pub)).sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+}
+function esInit() {
+  if (ES.ym) return;
+  let s = today();
+  while (dObj(s).getDay() !== 0) s = addDays(s, 1);
+  ES.ym = ymOf(s);
+  ES.step = ES.dstep = daysOf(ES.ym, 0).indexOf(s) + 1;
+}
+function esMonth(d) {
+  const [y, m] = ES.ym.split('-').map(Number);
+  ES.ym = isoOf(new Date(y, m - 1 + d, 1)).slice(0, 7);
+  const t = today(), i = daysOf(ES.ym, 0).findIndex(x => x >= t);
+  ES.step = ES.dstep = ES.ym === ymOf(t) && i >= 0 ? i + 1 : 1;
+}
+
+/* ---- gravar ---- */
+const bare = e => { const o = clone(e); delete o.by; o.up = Date.now(); return o; };
+function escSave(e, what, extra) {
+  const o = bare(e);
+  apply(Object.assign({ escala: [o] }, extra || {}), { what: what + ' · ' + escLbl(o), merge: 'esc-' + o.id });
+}
+function escSetSlot(e, k, val) {
+  const o = clone(e);
+  o.slots[k] = val;
+  if (o.kind === 'dom' && !o.pub && monthPub(ymOf(o.date))) o.pub = true;
+  const extra = {};
+  if (k === 'min' && o.cpub) {
+    const l = listFor(o, DATA.lists);
+    if (l && l.minister !== val) extra.lists = [Object.assign(clone(l), { minister: val, up: Date.now() })];
+  }
+  escSave(o, 'Mudou a escala', extra);
+}
+/* louvores, dízimos, ensaio e aviso: depois de salvo, vão direto para o culto */
+function escPut(e, v, what) {
+  const o = bare(e);
+  o.items = v.items.slice(); o.diz = v.diz || ''; o.reh = v.reh; o.aviso = (v.aviso || '').trim();
+  if (o.cpub) {
+    const base = listFor(o, DATA.lists), filled = v.items.filter(Boolean).length;
+    ES.blank[o.id] = Math.max(0, v.items.length - Math.max(3, filled));
+    if (base || filled || v.diz) {
+      const l = listFromView(o, v, base, escH());
+      apply({ escala: [o], lists: [l], reh: rehMemo(l) }, { what: what + ' · ' + cultoLabel(l), merge: 'esc-' + o.id });
+      return;
+    }
+  }
+  apply({ escala: [o] }, { what: what + ' · ' + escLbl(o), merge: 'esc-' + o.id });
+}
+function escSaveCulto(e) {
+  const v = escView(e), o = bare(e);
+  Object.assign(o, { pub: true, cpub: true, items: v.items.slice(), diz: v.diz || '', reh: v.reh, aviso: (v.aviso || '').trim() });
+  const ops = { escala: [o] };
+  if (v.items.some(Boolean) || v.diz) {
+    const l = listFromView(o, v, listFor(o, DATA.lists), escH());
+    ops.lists = [l];
+    ops.reh = rehMemo(l);
+    if (o.slots.min) ops.people = [o.slots.min];
+  }
+  ES.blank[o.id] = 0;
+  apply(ops, { what: 'Salvou a escala · ' + escLbl(o) });
+  toast('Escala salva');
+}
+function escSaveMonth() {
+  const docs = daysOf(ES.ym, 0).map(iso => Object.assign(bare(escOf(iso, 'dom')), { pub: true }));
+  apply({ escala: docs }, { what: 'Salvou a escala dos domingos de ' + monName(ES.ym) });
+  toast('Escala salva');
+}
+function escSaveRoster(people, what) { apply({ escala: [{ id: 'membros', people, up: Date.now() }] }, { what, merge: 'esc-membros' }); }
+
+/* ---- telas ---- */
+function escEditorHTML(e, nav, note) {
+  const nb = ES.newBox && ES.newBox.id === e.id ? ES.newBox.i : null;
+  let x = `<section class="e-ed" ${eid(e)}>${headHTML(e, nav)}${note ? `<p class="e-count">${note}</p>` : ''}${fieldsHTML(e, roster())}${cultoEditHTML(e, escView(e), DATA.songs.slice().sort(byTitle), nb)}`;
+  x += e.cpub ? '<p class="e-done">Escala salva. O que você mudar aqui aparece na hora para todos.</p>' : '<button class="btn pri wide e-big" data-act="e-cpub">Salvar escala</button><p class="e-hint c">Só você vê até salvar.</p>';
+  return x + `<button class="btn wide e-mt" data-act="e-daymsg">${ICON.send}Mensagem do dia no WhatsApp</button></section>`;
+}
+function escMesAdmin() {
+  const sundays = daysOf(ES.ym, 0);
+  ES.step = Math.max(1, Math.min(sundays.length, ES.step));
+  const iso = sundays[ES.step - 1], e = escOf(iso, 'dom'), pub = monthPub(ES.ym);
+  let x = `<section class="e-ed" ${eid(e)} aria-label="Montar a escala do mês">${headHTML(e, escNavHTML('e-step', ES.step, sundays.length, 'Domingo'))}
+    <p class="e-count">Domingo ${ES.step} de ${sundays.length} de ${monName(ES.ym)}</p>${fieldsHTML(e, roster())}`;
+  if (ES.step < sundays.length) x += `<button class="btn pri wide e-big" data-act="e-step" data-d="1">Próximo domingo · ${dm(sundays[ES.step])}${ICON.chev}</button>`;
+  else if (!pub) x += '<button class="btn pri wide e-big" data-act="e-savemonth">Salvar escala</button>';
+  x += `</section><div class="e-prev"><h2>Escala do mês</h2>${pub ? '<span class="e-ok">Salva</span>' : '<span class="e-hint">Só você vê até salvar</span>'}</div>`;
+  x += gridHTML(sundays, escGet, { admin: true, cur: iso });
+  if (pub) x += '<p class="e-done">Escala salva. O que você mudar aqui aparece na hora para todos.</p>';
+  else if (ES.step < sundays.length) x += '<button class="btn wide e-mt" data-act="e-savemonth">Salvar escala</button>';
+  return x + `<button class="btn pri wide e-mt" data-act="e-share">${ICON.send}Enviar imagem e mensagem</button>`;
+}
+function escMesMember() {
+  if (!monthPub(ES.ym)) return `<div class="empty e-mt"><p>A escala dos domingos de ${monName(ES.ym)} ainda não está pronta.</p></div>`;
+  return '<p class="e-top">Toque na data para ver a escala do dia.</p>' + gridHTML(daysOf(ES.ym, 0), escPubGet, { admin: false, me: meName() });
+}
+function escDom(adm) {
+  const sundays = daysOf(ES.ym, 0);
+  ES.dstep = Math.max(1, Math.min(sundays.length, ES.dstep));
+  const iso = sundays[ES.dstep - 1], nav = escNavHTML('e-dstep', ES.dstep, sundays.length, 'Domingo');
+  if (adm) return escEditorHTML(escOf(iso, 'dom'), nav, 'Os membros vêm da escala mensal. Se precisar, troque aqui.');
+  const e = escPubGet(iso, 'dom');
+  return `<section class="e-ed">${headHTML(e || escNew(iso, 'dom'), nav)}${e ? readCultoHTML(e, listFor(e, DATA.lists), escH()) : '<p class="e-note">A escala deste domingo ainda não está pronta.</p>'}</section>`;
+}
+function escSem(adm) {
+  const list = escMonthDocs(adm).filter(e => e.kind !== 'dom');
+  let x = adm ? `<button class="btn pri wide e-mt" data-act="e-add">${ICON.plus}Adicionar culto</button>` : '<p class="e-top">Toque no culto para ver a escala do dia.</p>';
+  if (!list.length) x += `<div class="empty e-mt"><p>${adm ? 'Nenhum culto de sexta ou especial neste mês. Toque em Adicionar culto.' : 'Nenhuma escala de sexta ou de culto especial pronta neste mês.'}</p></div>`;
+  else x += weekListHTML(list, adm, meName());
+  return x;
+}
+function renderEscala(force) {
+  const el = $('#tab-escala');
+  if (!el || (ES.hold && !force)) return;
+  const a = document.activeElement;
+  if (!force && a && el.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return;
+  esInit();
+  const adm = isAdmin();
+  let h = `<div class="vh"><div><h1>Escala</h1></div><div class="e-month"><button class="iconbtn" data-act="e-mon" data-d="-1" aria-label="Mês anterior">${ICON.back}</button><b>${monName(ES.ym)} ${ES.ym.slice(0, 4)}</b><button class="iconbtn" data-act="e-mon" data-d="1" aria-label="Próximo mês">${ICON.chev}</button></div></div>`;
+  if (!adm) h += mineHTML(escMonthDocs(false), ES.ym, meName());
+  h += `<div class="seg e-subs" role="group" aria-label="Escalas">${[['mes', 'Mensal'], ['dom', 'Domingo'], ['sem', 'Sexta e outros']].map(([k, t]) => `<button data-act="e-sub" data-v="${k}" aria-pressed="${ES.sub === k}">${t}</button>`).join('')}</div>`;
+  h += ES.sub === 'mes' ? (adm ? escMesAdmin() : escMesMember()) : ES.sub === 'dom' ? escDom(adm) : escSem(adm);
+  if (adm) h += `<button class="btn wide e-end" data-act="e-members">${ICON.users}Membros e funções</button>`;
+  el.innerHTML = h;
+}
+/* painel de um culto (sexta e especiais) */
+function escDayHTML(id) {
+  const e = escById(id), adm = isAdmin();
+  let h = `<div class="p-head"><div class="in"><button class="backbtn" data-act="close">${ICON.back}<span>Escala</span></button><span class="sp"></span></div></div><div class="p-body"><div class="p-in">`;
+  if (!e) return h + '<p class="emptyline">Esta escala foi excluída.</p></div></div>';
+  h += adm ? escEditorHTML(e, '') + `<button class="txtbtn danger" data-act="e-del" data-id="${esc(e.id)}" data-confirm="Toque de novo para excluir">Excluir esta escala</button>`
+    : `<section class="e-ed">${headHTML(e)}${readCultoHTML(e, listFor(e, DATA.lists), escH())}</section>`;
+  return h + '</div></div>';
+}
+function openEscDay(id) {
+  const p = openPanel(escDayHTML(id), 'escp');
+  p._kind = 'esc';
+  p._id = id;
+}
+function refreshEscPanel(p, force) {
+  if (ES.hold && !force) return;
+  const a = document.activeElement;
+  if (!force && a && p.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return;
+  const body = $('.p-body', p), top = body ? body.scrollTop : 0;
+  p.innerHTML = escDayHTML(p._id);
+  const nb = $('.p-body', p);
+  if (nb) nb.scrollTop = top;
+}
+/* depois de uma troca: redesenha e devolve o foco para a mesma caixa */
+function escRefresh(t, focusSel) {
+  const p = t.closest('.panel'), id = focusSel || (t.id ? '#' + CSS.escape(t.id) : '');
+  if (p) refreshEscPanel(p, true); else renderEscala(true);
+  const again = id && $(id);
+  if (again) try { again.focus({ preventScroll: true }); } catch (e) { /* ok */ }
+}
+const escCtx = el => { const s = el.closest('[data-eid]'); return s ? escOf(s.dataset.edate, s.dataset.ekind, s.dataset.ename) : null; };
+
+/* ---- mensagens e imagem ---- */
+function escDayMsg(e) {
+  const v = escView(e), H = escH();
+  return dayMsg(e, v.live || listFromView(e, v, null, H), H);
+}
+function escShowMsg(title, text) {
+  openSheet(`<h3>${title}</h3><p>Assim vai aparecer no grupo.</p><pre class="e-msg">${esc(text)}</pre>
+    <div class="row2"><button class="btn" data-act="e-copy">${ICON.copy}Copiar</button><a class="btn pri" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">${ICON.send}WhatsApp</a></div>`, { escText: text });
+}
+function quietCopy(t) { try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).catch(() => {}); } catch (e) { /* ok */ } }
+async function escShareMonth() {
+  const ym = ES.ym, text = monthMsg(ym, escGet, appUrl());
+  openSheet('<h3>Enviar no WhatsApp</h3><p>Preparando a imagem…</p>', { escText: text });
+  const ctx = sheetEl._ctx;
+  let url = '', blob = null;
+  try {
+    const c = await monthImage(ym, escGet);
+    url = c.toDataURL('image/png');
+    blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  } catch (e) { console.error(e); }
+  if (!sheetEl || sheetEl._ctx !== ctx) return;
+  ctx.file = blob ? new File([blob], 'escala-' + ym + '.png', { type: 'image/png' }) : null;
+  let can = false;
+  try { can = !!(ctx.file && navigator.canShare && navigator.canShare({ files: [ctx.file], text })); } catch (e) { can = false; }
+  $('.sheet', sheetEl).innerHTML = `<h3>Enviar no WhatsApp</h3>
+    <p>${can ? 'Toque em Enviar e escolha o WhatsApp e o grupo: a imagem vai junto com a mensagem, como legenda da foto.' : 'Salve a imagem e mande no grupo. Depois copie a mensagem e cole junto.'}</p>
+    ${url ? `<img class="e-img" src="${url}" alt="Escala dos domingos de ${monName(ym)} em forma de tabela">` : ''}
+    <pre class="e-msg">${esc(text)}</pre>
+    <div class="row2"><button class="btn" data-act="e-copy">${ICON.copy}Copiar mensagem</button>${can ? `<button class="btn pri" data-act="e-sharego">${ICON.send}Enviar</button>` : url ? `<a class="btn pri" href="${url}" download="escala-${ym}.png">${ICON.image}Salvar imagem</a>` : `<a class="btn pri" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">${ICON.send}WhatsApp</a>`}</div>`;
+}
+
+/* ---- folhas ---- */
+function openEscMembers() {
+  const ppl = roster(), fns = Object.keys(EFN);
+  openSheet(`<h3>Membros e funções</h3><p>Marque o que cada um costuma fazer. Na hora de escalar, essas pessoas aparecem primeiro na caixa, mas qualquer membro pode ser escolhido.</p>
+    <div class="row2 e-addm"><input class="inp" id="e-mnew" placeholder="Nome do membro novo" autocomplete="off" maxlength="60" enterkeyhint="done"><button class="btn pri" data-act="e-madd">Adicionar</button></div>
+    <div class="e-mlist">${ppl.length ? ppl.map(m => `<div class="e-mrow"><div class="e-mtop"><b>${esc(m.n)}</b><button class="iconbtn sm" data-act="e-mrm" data-n="${esc(m.n)}" aria-label="Tirar ${esc(m.n)} da lista">${ICON.x}</button></div><div class="e-fchips" role="group" aria-label="Funções de ${esc(m.n)}">${fns.map(f => `<button data-act="e-mf" data-n="${esc(m.n)}" data-r="${f}" aria-pressed="${m.f.includes(f)}">${EFN[f]}</button>`).join('')}</div></div>`).join('') : '<p class="hint">Nenhum membro ainda. Escreva o nome e toque em Adicionar.</p>'}</div>
+    <button class="btn wide e-mt" data-act="sheet-done">Pronto</button>`, { members: true });
+}
+function openEscAdd() {
+  openSheet(`<h3>Adicionar culto</h3>
+    <div class="e-flabel">Tipo de culto</div><div class="kinds" id="e-sk" role="group" aria-label="Tipo de culto">${[['sex', 'Sexta'], ['jovens', 'Jovens'], ['mulheres', 'Mulheres'], ['outro', 'Outro']].map(([k, t], i) => `<button data-act="e-sk" data-v="${k}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>
+    <input class="inp e-mt" id="e-sname" placeholder="Nome do culto (ex.: Vigília)" hidden autocomplete="off" maxlength="60">
+    <div class="e-flabel">Dia</div><div class="e-sw" id="e-sdatew">${dateSelectHTML('sex', DATA.escala || [], today(), DATA.lists)}</div>
+    <input class="inp e-mt" type="date" id="e-sother" aria-label="Outro dia" hidden>
+    <button class="btn pri wide e-big" data-act="e-screate">Montar a escala</button>`);
+}
+
+/* ---- toques ---- */
+function escClick(b, act, p) {
+  const e = b.closest('[data-eid]') ? escCtx(b) : null;
+  const top = () => { const s = $('#tab-escala .e-ed'); if (s) s.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+  switch (act) {
+    case 'e-mon': esMonth(+b.dataset.d); renderEscala(true); window.scrollTo(0, 0); break;
+    case 'e-sub': ES.sub = b.dataset.v; renderEscala(true); break;
+    case 'e-step': ES.step += +b.dataset.d; renderEscala(true); top(); break;
+    case 'e-dstep': ES.dstep += +b.dataset.d; renderEscala(true); top(); break;
+    case 'e-gostep': ES.step = +b.dataset.i; renderEscala(true); top(); break;
+    case 'e-goday': ES.dstep = +b.dataset.i; ES.sub = 'dom'; renderEscala(true); window.scrollTo(0, 0); break;
+    case 'e-day': openEscDay(b.dataset.id); break;
+    case 'e-savemonth': escSaveMonth(); break;
+    case 'e-cpub': if (e) escSaveCulto(e); break;
+    case 'e-sadd': {
+      if (!e) break;
+      if (e.cpub && escView(e).live) { ES.blank[e.id] = (ES.blank[e.id] || 0) + 1; escRefresh(b); }
+      else { const v = escView(e); v.items.push(''); escPut(e, v, 'Mudou os louvores'); }
+      const sel = $$(`[data-eid="${CSS.escape(e.id)}"] [data-esong]`).pop();
+      if (sel) try { sel.focus({ preventScroll: true }); } catch (x) { /* ok */ }
+      break;
+    }
+    case 'e-srm': case 'e-smv': {
+      if (!e) break;
+      const v = escView(e), i = +b.dataset.i;
+      if (act === 'e-srm') v.items.splice(i, 1);
+      else { const j = i + (+b.dataset.d); if (j < 0 || j >= v.items.length) break; [v.items[i], v.items[j]] = [v.items[j], v.items[i]]; }
+      if (ES.newBox && ES.newBox.id === e.id) ES.newBox = null;
+      escPut(e, v, 'Mudou os louvores');
+      break;
+    }
+    case 'e-newok': {
+      if (!e) break;
+      const i = b.dataset.i, inp = $(`#en-${i}`, b.closest('[data-eid]'));
+      const title = titleCase((inp && inp.value || '').trim());
+      if (!title) { if (inp) inp.focus(); toast('Escreva o nome do louvor'); break; }
+      let so = matchSong(title);
+      const isNew = !so;
+      if (isNew) { so = Object.assign(blankSong(title), { up: Date.now() }); apply({ songs: [so] }, { what: 'Cadastrou o louvor ' + title }); }
+      const v = escView(escCtx(b) || e);
+      if (i === 'diz') v.diz = so.id; else v.items[+i] = so.id;
+      ES.newBox = null;
+      escPut(escCtx(b) || e, v, 'Mudou os louvores');
+      if (isNew) toast(so.title + ' entrou no repertório. Depois coloque a cifra.');
+      break;
+    }
+    case 'e-daymsg': if (e) escShowMsg('Mensagem do dia', escDayMsg(e)); break;
+    case 'e-share': escShareMonth(); break;
+    case 'e-sharego': {
+      const c = sheetEl && sheetEl._ctx;
+      if (!c || !c.file) break;
+      quietCopy(c.escText);
+      navigator.share({ files: [c.file], text: c.escText }).then(() => closeSheet(), () => {});
+      break;
+    }
+    case 'e-copy': { const c = sheetEl && sheetEl._ctx; if (c && c.escText) copyText(c.escText, 'Mensagem copiada'); break; }
+    case 'e-members': openEscMembers(); break;
+    case 'e-mf': {
+      const ppl = roster(), m = ppl.find(x => x.n === b.dataset.n), r = b.dataset.r;
+      if (!m) break;
+      const k = m.f.indexOf(r);
+      if (k >= 0) m.f.splice(k, 1); else m.f.push(r);
+      b.setAttribute('aria-pressed', String(k < 0));
+      escSaveRoster(ppl, 'Mudou as funções dos membros');
+      break;
+    }
+    case 'e-madd': {
+      const inp = $('#e-mnew'), n = titleCase((inp.value || '').trim());
+      if (!n) { inp.focus(); break; }
+      const ppl = roster();
+      if (ppl.some(x => norm(x.n) === norm(n))) { toast(n + ' já está na lista'); break; }
+      ppl.push({ n, f: [] });
+      escSaveRoster(ppl, 'Adicionou ' + n + ' aos membros');
+      openEscMembers();
+      toast(n + ' adicionado');
+      break;
+    }
+    case 'e-mrm': {
+      const n = b.dataset.n;
+      escSaveRoster(roster().filter(x => x.n !== n), 'Tirou ' + n + ' dos membros');
+      openEscMembers();
+      toast(n + ' saiu da lista');
+      break;
+    }
+    case 'e-add': openEscAdd(); break;
+    case 'e-sk': {
+      $$('#e-sk button').forEach(c => c.setAttribute('aria-pressed', String(c === b)));
+      $('#e-sname').hidden = b.dataset.v !== 'outro';
+      $('#e-sdatew').innerHTML = dateSelectHTML(b.dataset.v, DATA.escala || [], today(), DATA.lists);
+      $('#e-sother').hidden = true;
+      if (b.dataset.v === 'outro') $('#e-sname').focus();
+      break;
+    }
+    case 'e-screate': {
+      const k = $('#e-sk [aria-pressed="true"]').dataset.v, name = k === 'outro' ? titleCase($('#e-sname').value.trim()) : '';
+      let date = $('#e-sdate').value;
+      if (date === '__other') { date = $('#e-sother').value; if (!isIso(date)) { $('#e-sother').focus(); toast('Escolha o dia'); break; } }
+      if (k === 'outro' && !name) { $('#e-sname').focus(); toast('Escreva o nome do culto'); break; }
+      closeSheet();
+      ES.sub = 'sem';
+      ES.ym = ymOf(date);
+      let ex = escGet(date, k, name);
+      if (!ex) { ex = escOf(date, k, name); ex.name = name; escSave(ex, 'Criou a escala'); }
+      renderEscala(true);
+      openEscDay(ex.id);
+      break;
+    }
+    case 'e-del': {
+      const old = escById(b.dataset.id);
+      if (!old) break;
+      apply({ delEscala: [old.id] }, { what: 'Excluiu a escala · ' + escLbl(old) });
+      if (p) removePanel(p);
+      toast('Escala excluída', { label: 'Desfazer', fn: () => apply({ escala: [bare(old)] }, { what: 'Desfez a exclusão da escala · ' + escLbl(old) }) });
+      break;
+    }
+    default: break;
+  }
+}
+/* caixas de escolha */
+function escChange(t) {
+  if (t.id === 'e-sdate') { $('#e-sother').hidden = t.value !== '__other'; if (t.value === '__other') $('#e-sother').focus(); return true; }
+  if (!t.closest || !t.closest('[data-eid]') || !isAdmin()) return false;
+  const e = escCtx(t), d = t.dataset;
+  if (d.ek) escSetSlot(e, d.ek, t.value);
+  else if (d.esong != null || d.ediz) {
+    const i = d.ediz ? 'diz' : +d.esong;
+    if (t.value === '__new') { ES.newBox = { id: e.id, i }; escRefresh(t, '#en-' + i); return true; }
+    const v = escView(e);
+    if (i === 'diz') v.diz = t.value; else v.items[i] = t.value;
+    if (ES.newBox && ES.newBox.id === e.id) ES.newBox = null;
+    escPut(e, v, 'Mudou os louvores');
+  } else if (d.ereh) {
+    const v = escView(e);
+    v.reh = Object.assign({ day: 'same', time: '' }, v.reh, { [d.ereh]: t.value });
+    escPut(e, v, 'Mudou o ensaio');
+  } else if (d.eaviso) {
+    const v = escView(e);
+    if ((v.aviso || '').trim() === t.value.trim()) return true;
+    v.aviso = t.value;
+    ES.hold = true; /* não redesenha: o toque seguinte (ex.: Salvar escala) não pode se perder */
+    try { escPut(e, v, 'Mudou o aviso'); } finally { ES.hold = false; }
+    return true;
+  } else return false;
+  escRefresh(t);
+  return true;
+}
+
 /* ===== Dados chegando (de outra pessoa ou do aparelho) ===== */
 function onData(v, info) {
   DATA = v;
@@ -1919,6 +2292,8 @@ function refreshPanel(p, info) {
     p.innerHTML = listPanelHTML(l);
     const nb = $('.p-body', p);
     if (nb) nb.scrollTop = top;
+  } else if (p._kind === 'esc') {
+    refreshEscPanel(p);
   } else if (p._kind === 'song') {
     const st = p._st, so = songById(st.id);
     if (!so) { if (info.remote) { removePanel(p); toast('Este louvor foi excluído.'); } return; }
@@ -2204,13 +2579,14 @@ document.addEventListener('click', e => {
     }
     case 'save': saveSong(p); break;
     case 'del': deleteSong(p); break;
-    default: break;
+    default: if (act.startsWith('e-')) escClick(b, act, p); break;
   }
 });
 
 /* arquivo de áudio escolhido e posição solta no fim do arraste */
 document.addEventListener('change', e => {
   const t = e.target, p = t && t.closest && t.closest('.panel');
+  if (t && t.dataset && escChange(t)) return;
   if (p && t.dataset && (t.dataset.au === 'file' || t.dataset.au === 'seek')) audioInput(p, t);
 });
 document.addEventListener('input', e => {
@@ -2272,6 +2648,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'rn-name') { e.preventDefault(); const b = $('[data-act="rename-go"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'ba-pass') { e.preventDefault(); const b = $('[data-act="become-admin-go"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'ap-new') { e.preventDefault(); const b = $('[data-act="admin-pass-go"]'); if (b) b.click(); return; }
+  if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.enew != null) { e.preventDefault(); const b = e.target.parentNode.querySelector('[data-act="e-newok"]'); if (b) b.click(); return; }
+  if (e.key === 'Enter' && id === 'e-mnew') { e.preventDefault(); const b = $('[data-act="e-madd"]'); if (b) b.click(); return; }
   if (e.key === 'Escape' && !HAS_CW && backLayers() > 0) goBack(); /* no Chrome, o Esc chega pelo vigia */
 });
 

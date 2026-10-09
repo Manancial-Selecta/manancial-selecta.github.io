@@ -1,6 +1,6 @@
 /* Modo demonstração (sem Firebase): os dados ficam só neste aparelho.
    Serve para a prévia e para os testes. Abas abertas no mesmo aparelho se atualizam juntas. */
-import { normSong, normList, normMeta, fromPrototype, sameJSON } from './model.js';
+import { normSong, normList, normMeta, normEsc, fromPrototype, sameJSON } from './model.js';
 import { clone, storeGet, storeSet, storeDel, uid, mergeNames, today } from './util.js';
 
 const DATA_KEY = 'lm-demo-data', ME_KEY = 'lm-demo-me', CODE_KEY = 'lm-demo-code', LOG_KEY = 'lm-demo-log', PASS_KEY = 'lm-demo-adminpass', OPEN_KEY = 'lm-demo-open';
@@ -20,7 +20,7 @@ export function createLocalStore(opts) {
       const prev = state;
       state = load();
       const changed = new Set();
-      ['songs', 'lists'].forEach(col => {
+      ['songs', 'lists', 'escala'].forEach(col => {
         const ids = new Set([...prev[col].keys(), ...state[col].keys()]);
         ids.forEach(id => { if (!sameJSON(prev[col].get(id), state[col].get(id))) changed.add(id); });
       });
@@ -33,10 +33,11 @@ export function createLocalStore(opts) {
     let raw = null;
     try { raw = JSON.parse(storeGet('localStorage', DATA_KEY) || 'null'); } catch (e) { raw = null; }
     const src = raw && Array.isArray(raw.songs) ? fromPrototype(raw) : clone(seed);
-    return { songs: new Map(src.songs.map(s => [s.id, s])), lists: new Map(src.lists.map(l => [l.id, l])), meta: src.meta };
+    const esc = raw && Array.isArray(raw.escala) ? raw.escala.map(normEsc).filter(e => e.id) : [];
+    return { songs: new Map(src.songs.map(s => [s.id, s])), lists: new Map(src.lists.map(l => [l.id, l])), escala: new Map(esc.map(e => [e.id, e])), meta: src.meta };
   }
   function save() {
-    storeSet('localStorage', DATA_KEY, JSON.stringify({ songs: [...state.songs.values()], lists: [...state.lists.values()], people: state.meta.people, prefs: state.meta.prefs }));
+    storeSet('localStorage', DATA_KEY, JSON.stringify({ songs: [...state.songs.values()], lists: [...state.lists.values()], escala: [...state.escala.values()], people: state.meta.people, prefs: state.meta.prefs }));
     if (bc) { try { bc.postMessage('x'); } catch (e) { /* ok */ } }
   }
   /* se o navegador não deixar guardar nada, vale a memória enquanto a página estiver aberta */
@@ -49,7 +50,7 @@ export function createLocalStore(opts) {
   const code = () => memCode || storeGet('localStorage', CODE_KEY) || demoCode;
   const setCode = c => { memCode = c; storeSet('localStorage', CODE_KEY, c); };
   function view() {
-    return { songs: [...state.songs.values()], lists: [...state.lists.values()], people: state.meta.people.slice(), prefs: clone(state.meta.prefs) };
+    return { songs: [...state.songs.values()], lists: [...state.lists.values()], escala: [...state.escala.values()], people: state.meta.people.slice(), prefs: clone(state.meta.prefs) };
   }
   function emit(changed, remote) {
     const v = view();
@@ -60,6 +61,8 @@ export function createLocalStore(opts) {
     const x = ops || {}, changed = new Set(), by = (readMe() || {}).name || '';
     (x.songs || []).forEach(s => { const so = normSong(Object.assign({}, s, { by })); state.songs.set(so.id, so); changed.add(so.id); });
     (x.lists || []).forEach(l => { const li = normList(Object.assign({}, l, { by }), state.meta.prefs); state.lists.set(li.id, li); changed.add(li.id); });
+    (x.escala || []).forEach(e => { const es = normEsc(Object.assign({}, e, { by })); state.escala.set(es.id, es); changed.add(es.id); });
+    (x.delEscala || []).forEach(id => { if (state.escala.delete(id)) changed.add(id); });
     (x.delSongs || []).forEach(id => { if (state.songs.delete(id)) changed.add(id); });
     (x.delLists || []).forEach(id => { if (state.lists.delete(id)) changed.add(id); });
     if ((x.people || []).length) { state.meta.people = mergeNames(state.meta.people, x.people); changed.add('meta'); }

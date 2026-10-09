@@ -197,6 +197,28 @@ const lastPanel = page => page.locator('.panel').last();
     await lastPanel(A).locator('[data-act="close"]').first().click();
     await lastPanel(B).locator('[data-act="close"]').first().click();
 
+    /* ----- escala: só o administrador monta; o membro vê na hora depois de salvar ----- */
+    await A.click('[data-act="tab"][data-v="escala"]');
+    await B.click('[data-act="tab"][data-v="escala"]');
+    await A.waitForSelector('#tab-escala [data-ek="min"]');
+    check(await B.locator('#tab-escala select').count() === 0 && await B.locator('[data-act="e-members"]').count() === 0, 'membro não monta escala');
+    await A.selectOption('#tab-escala [data-ek="v0"]', 'Carla');
+    await sleep(600);
+    check(!/Back/.test(await B.locator('#tab-escala .e-mine').textContent()), 'rascunho não aparece para o membro');
+    await A.click('[data-act="e-savemonth"]');
+    check(await until(async () => /Back/.test(await B.locator('#tab-escala .e-mine').textContent()), 6000), 'membro vê a escala salva na hora');
+    const denied = await B.evaluate(async () => {
+      const m = await import('/src/app.js');
+      m._debug.STORE.commit({ escala: [{ id: '2026-11-29dom', date: '2026-11-29', kind: 'dom', slots: { min: 'Carla' }, pub: true }] });
+      await new Promise(r => setTimeout(r, 800));
+      return !JSON.parse(localStorage.getItem('mock-fs-db'))['escala/2026-11-29dom'];
+    });
+    check(denied, 'regras: membro não grava na escala');
+    const dbE = await A.evaluate(() => JSON.parse(localStorage.getItem('mock-fs-db')));
+    check(dbE['escala/2026-10-11dom'] && dbE['escala/2026-10-11dom'].slots.v0 === 'Carla' && dbE['escala/2026-10-11dom'].pub === true, 'escala no banco');
+    await A.click('[data-act="tab"][data-v="cultos"]');
+    await B.click('[data-act="tab"][data-v="cultos"]');
+
     /* ----- outra pessoa vira administradora pelo console do Firebase: o celular dela fica sabendo na hora ----- */
     await B.evaluate(() => {
       const db = JSON.parse(localStorage.getItem('mock-fs-db'));

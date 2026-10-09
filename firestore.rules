@@ -92,6 +92,12 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // escala: todos os membros leem; só quem administra monta e altera
+    match /escala/{id} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
     // louvores, cultos e preferências: todos os membros leem e editam
     match /songs/{id} { allow read, write: if isMember(); }
     match /lists/{id} { allow read, write: if isMember(); }

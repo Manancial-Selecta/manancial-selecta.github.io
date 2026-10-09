@@ -78,6 +78,31 @@ export function fromPrototype(d) {
   };
 }
 
+/* escala: quem faz o quê em cada culto (montada pelo administrador).
+   Rascunho dos louvores (items/diz/reh/aviso) fica aqui até "Salvar escala" criar o culto.
+   O documento "membros" guarda a lista de pessoas e o que cada uma costuma fazer. */
+export const ESC_KEYS = ['min', 'v0', 'v1', 'v2', 'tec', 'bat', 'gui', 'vio', 'bai', 'mid', 'som'];
+export const ESC_FNS = ['min', 'voc', 'tec', 'bat', 'gui', 'vio', 'bai', 'mid', 'som'];
+export function normEsc(e) {
+  const o = obj(e);
+  if (str(o.id) === 'membros') {
+    const seen = new Set();
+    const people = (Array.isArray(o.people) ? o.people : []).map(p => ({ n: str(obj(p).n).trim().slice(0, 60), f: (Array.isArray(obj(p).f) ? p.f : []).filter(f => ESC_FNS.includes(f)) }))
+      .filter(p => p.n && !seen.has(p.n.toLowerCase()) && seen.add(p.n.toLowerCase()));
+    return { id: 'membros', people, up: Number(o.up) || 0, by: str(o.by) };
+  }
+  const slots = {};
+  ESC_KEYS.forEach(k => { slots[k] = str(obj(o.slots)[k]).slice(0, 60); });
+  const reh = o.reh && typeof o.reh === 'object' ? { day: o.reh.day === 'before' ? 'before' : 'same', time: /^\d{1,2}:\d{2}$/.test(str(o.reh.time)) ? str(o.reh.time) : '' } : null;
+  return {
+    id: str(o.id), date: isIso(o.date) ? o.date : '', kind: ['dom', 'sex', 'jovens', 'mulheres', 'outro'].includes(o.kind) ? o.kind : 'outro',
+    name: str(o.name).slice(0, 60), slots, pub: !!o.pub, cpub: !!o.cpub,
+    items: Array.isArray(o.items) ? o.items.map(str).slice(0, 30) : null, diz: str(o.diz), reh, aviso: str(o.aviso).slice(0, 300),
+    up: Number(o.up) || 0, by: str(o.by)
+  };
+}
+export function escDoc(e) { const o = normEsc(e); delete o.by; return o; }
+
 /* o que vai para o banco: sem campos internos */
 export function songDoc(s) { const o = normSong(s); delete o.by; return o; }
 export function listDoc(l) { const o = normList(l, null); delete o.by; return o; }
