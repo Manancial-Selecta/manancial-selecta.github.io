@@ -60,6 +60,11 @@ async function until(fn, ms) {
     check(await page.locator('.e-mrow b', { hasText: 'Ana Teste' }).count() === 1, 'membro novo entra na lista');
     await page.click('.e-mrow:has(b:text-is("Marcos")) [data-r="min"]');
     await page.click('.e-mrow:has(b:text-is("Carla")) [data-r="voc"]');
+    /* trocar o nome pelo lápis */
+    await page.click('.e-mrow [data-act="e-mren"][data-n="Ana Teste"]');
+    await page.fill('#e-mrn', 'ana souza');
+    await page.press('#e-mrn', 'Enter');
+    check(await page.locator('.e-mrow b', { hasText: 'Ana Souza' }).count() === 1 && await page.locator('.e-mrow b', { hasText: 'Ana Teste' }).count() === 0, 'nome trocado pelo lápis');
     await page.click('[data-act="sheet-done"]');
     let d = await D();
     const mem = d.escala.find(e => e.id === 'membros');
@@ -132,7 +137,7 @@ async function until(fn, ms) {
     await page.fill('#tab-escala [data-eaviso]', 'Chegar cedo');
     await page.click('#tab-escala [data-act="e-daymsg"]');
     const dmsg = await page.locator('.sheet .e-msg').textContent();
-    check(/^\*ESCALA DO DOMINGO DIA 11\/10\*/.test(dmsg) && /\*MINISTRO\* : MARCOS\n• CARLA/.test(dmsg) && /\*TECLADO\* : CARLA/.test(dmsg) && /\*ENSAIO\* : DOMINGO 11\/10 ÀS 16H00/.test(dmsg) && /\*LOUVORES\* :/.test(dmsg) && /⚠️ CHEGAR CEDO/.test(dmsg) && /#l20261011/.test(dmsg), 'mensagem do dia no formato da líder', dmsg);
+    check(/^\*ESCALA DO DOMINGO DIA 11\/10\*/.test(dmsg) && /\*MINISTRO\* : MARCOS\n• CARLA/.test(dmsg) && /\*TECLADO\* : CARLA/.test(dmsg) && /\*ENSAIO\* : DOMINGO 11\/10 ÀS 16H00/.test(dmsg) && /\*LOUVORES\* :/.test(dmsg) && /⚠️ CHEGAR CEDO/.test(dmsg) && /#escala-2026-10-11dom$/.test(dmsg), 'mensagem do dia no formato da líder', dmsg);
     await page.click('.scrim', { position: { x: 10, y: 10 } });
     await page.screenshot({ path: path.join(SHOTS, 'e3-domingo.png'), fullPage: true });
 
@@ -162,6 +167,18 @@ async function until(fn, ms) {
     const ov = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
     check(!ov, 'aba cabe na largura do celular');
 
+    /* administrador também vê a própria escala */
+    await page.click('#me-btn');
+    await page.click('.menu [data-act="rename"]');
+    await page.fill('#rn-name', 'Carla');
+    await page.click('[data-act="rename-go"]');
+    await sleep(200);
+    check(/Back e Teclado/.test(await page.locator('#tab-escala .e-mine').textContent()), 'administrador vê o quadro Sua escala');
+    await page.click('#tab-escala .e-mine [data-act="e-mine"]');
+    check(await page.locator('.panel .e-you').count() === 1 && await page.locator('.panel select').count() === 0, 'tocar no dia abre a escala como membro');
+    await page.click('.panel [data-act="close"]');
+    check(/escala-2026-10-11dom/.test(dmsg), 'link da escala do dia');
+
     /* membro: só vê */
     await page.evaluate(() => { const m = JSON.parse(localStorage.getItem('lm-demo-me')); m.admin = false; m.name = 'Carla'; localStorage.setItem('lm-demo-me', JSON.stringify(m)); });
     await page.reload();
@@ -175,6 +192,7 @@ async function until(fn, ms) {
     check(await page.locator('.e-grid span.me').count() >= 1, 'nome do membro destacado na grade');
     await page.click('.e-grid .dh >> text=11/10');
     check(await page.locator('#tab-escala .e-ro button').count() === 5 && await page.locator('#tab-escala [data-act="e-daymsg"]').count() === 0, 'membro vê os louvores do domingo, sem botão de WhatsApp');
+    check(/Back e Teclado/.test(await page.locator('#tab-escala .e-you').textContent()), 'membro vê a função dele em destaque');
     await page.screenshot({ path: path.join(SHOTS, 'e5-membro.png'), fullPage: true });
     await page.locator('#tab-escala .e-ro button').first().click();
     await page.waitForSelector('.panel .cifra, .panel [data-el="cifra"], .panel .p-head');
@@ -182,6 +200,11 @@ async function until(fn, ms) {
     await page.keyboard.press('Escape');
     await page.click('[data-act="e-sub"][data-v="sem"]');
     check(await page.locator('#tab-escala .e-wcard.me').count() === 0 && await page.locator('#tab-escala .e-wcard').count() === 1, 'membro vê a sexta salva');
+    /* link da mensagem do dia abre a escala do dia */
+    await page.goto(BASE + '#escala-2026-10-11dom');
+    await page.waitForSelector('.panel .e-you');
+    check(/Back e Teclado/.test(await page.locator('.panel .e-you').textContent()) && await page.locator('.panel .e-ro button').count() === 5, 'link abre a escala do dia com a função da pessoa');
+    await page.screenshot({ path: path.join(SHOTS, 'e6-link.png') });
     await ctx.close();
   } catch (e) {
     fails++;

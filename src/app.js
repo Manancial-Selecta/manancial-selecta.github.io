@@ -10,7 +10,7 @@ import { guitarShapes, guitarSVG, keyboardSVG, keyboardNotes, chordsOfLines } fr
 import { ytId, ytWatch, ytThumb, ytEmbed, ytSearch } from './youtube.js';
 import { ICON } from './icons.js';
 import { createLocalStore } from './store-local.js';
-import { EFN, escNew, escLabel, daysOf, monName, listFor, viewOf, listFromView, dayMsg, monthMsg, headHTML, navHTML as escNavHTML, fieldsHTML, cultoEditHTML, readCultoHTML, gridHTML, mineHTML, weekListHTML, eid, dateSelectHTML, monthImage } from './escala-ui.js';
+import { EFN, escNew, escLabel, daysOf, monName, listFor, viewOf, listFromView, dayMsg, monthMsg, headHTML, navHTML as escNavHTML, fieldsHTML, cultoEditHTML, readCultoHTML, gridHTML, mineHTML, weekListHTML, rolesOf, eid, dateSelectHTML, monthImage } from './escala-ui.js';
 
 /* ===== Estado ===== */
 const S = {
@@ -613,7 +613,7 @@ async function doRename(btn) {
   busy(btn, 'Salvando…');
   try { await STORE.rename(name); } catch (e) { busy(btn, false); gateErr(errMsg(e)); return; }
   closeSheet();
-  renderMe();
+  renderAll();
   toast('Nome salvo');
 }
 function openInstall() {
@@ -1990,6 +1990,24 @@ function escSaveMonth() {
   apply({ escala: docs }, { what: 'Salvou a escala dos domingos de ' + monName(ES.ym) });
   toast('Escala salva');
 }
+/* trocar o nome: muda na lista de membros, nas escalas e nos próximos cultos */
+function escRename(old, n) {
+  if (!n) { const i = $('#e-mrn'); if (i) i.focus(); toast('Escreva o nome'); return; }
+  if (n === old) { openEscMembers(); return; }
+  const ppl = roster();
+  if (ppl.some(x => x.n !== old && norm(x.n) === norm(n))) { toast(n + ' já está na lista'); return; }
+  const m = ppl.find(x => x.n === old);
+  if (m) m.n = n; else ppl.push({ n, f: [] });
+  const docs = (DATA.escala || []).filter(e => e.slots && Object.values(e.slots).includes(old)).map(e => {
+    const o = bare(e);
+    Object.keys(o.slots).forEach(k => { if (o.slots[k] === old) o.slots[k] = n; });
+    return o;
+  });
+  const lists = DATA.lists.filter(l => l.date >= today() && l.minister === old).map(l => Object.assign(clone(l), { minister: n, up: Date.now() }));
+  apply({ escala: [{ id: 'membros', people: ppl, up: Date.now() }].concat(docs), lists, people: [n] }, { what: 'Mudou o nome de ' + old + ' para ' + n });
+  openEscMembers();
+  toast('Nome trocado' + (docs.length ? ' também nas escalas' : ''));
+}
 function escSaveRoster(people, what) { apply({ escala: [{ id: 'membros', people, up: Date.now() }] }, { what, merge: 'esc-membros' }); }
 
 /* ---- telas ---- */
@@ -2040,32 +2058,33 @@ function renderEscala(force) {
   esInit();
   const adm = isAdmin();
   let h = `<div class="vh"><div><h1>Escala</h1></div><div class="e-month"><button class="iconbtn" data-act="e-mon" data-d="-1" aria-label="Mês anterior">${ICON.back}</button><b>${monName(ES.ym)} ${ES.ym.slice(0, 4)}</b><button class="iconbtn" data-act="e-mon" data-d="1" aria-label="Próximo mês">${ICON.chev}</button></div></div>`;
-  if (!adm) h += mineHTML(escMonthDocs(false), ES.ym, meName());
+  { const mine = escMonthDocs(false); if (!adm || mine.some(e => rolesOf(e, meName()).length)) h += mineHTML(mine, ES.ym, meName()); } /* para o administrador, só quando está escalado */
   h += `<div class="seg e-subs" role="group" aria-label="Escalas">${[['mes', 'Mensal'], ['dom', 'Domingo'], ['sem', 'Sexta e outros']].map(([k, t]) => `<button data-act="e-sub" data-v="${k}" aria-pressed="${ES.sub === k}">${t}</button>`).join('')}</div>`;
   h += ES.sub === 'mes' ? (adm ? escMesAdmin() : escMesMember()) : ES.sub === 'dom' ? escDom(adm) : escSem(adm);
   if (adm) h += `<button class="btn wide e-end" data-act="e-members">${ICON.users}Membros e funções</button>`;
   el.innerHTML = h;
 }
 /* painel de um culto (sexta e especiais) */
-function escDayHTML(id) {
-  const e = escById(id), adm = isAdmin();
+function escDayHTML(id, ro) {
+  const e = escById(id), adm = isAdmin() && !ro;
   let h = `<div class="p-head"><div class="in"><button class="backbtn" data-act="close">${ICON.back}<span>Escala</span></button><span class="sp"></span></div></div><div class="p-body"><div class="p-in">`;
   if (!e) return h + '<p class="emptyline">Esta escala foi excluída.</p></div></div>';
   h += adm ? escEditorHTML(e, '') + `<button class="txtbtn danger" data-act="e-del" data-id="${esc(e.id)}" data-confirm="Toque de novo para excluir">Excluir esta escala</button>`
     : `<section class="e-ed">${headHTML(e)}${readCultoHTML(e, listFor(e, DATA.lists), escH())}</section>`;
   return h + '</div></div>';
 }
-function openEscDay(id) {
-  const p = openPanel(escDayHTML(id), 'escp');
+function openEscDay(id, ro, noanim) {
+  const p = openPanel(escDayHTML(id, ro), 'escp', noanim);
   p._kind = 'esc';
   p._id = id;
+  p._ro = !!ro;
 }
 function refreshEscPanel(p, force) {
   if (ES.hold && !force) return;
   const a = document.activeElement;
   if (!force && a && p.contains(a) && /^(SELECT|INPUT|TEXTAREA)$/.test(a.tagName)) return;
   const body = $('.p-body', p), top = body ? body.scrollTop : 0;
-  p.innerHTML = escDayHTML(p._id);
+  p.innerHTML = escDayHTML(p._id, p._ro);
   const nb = $('.p-body', p);
   if (nb) nb.scrollTop = top;
 }
@@ -2114,7 +2133,7 @@ function openEscMembers() {
   const ppl = roster(), fns = Object.keys(EFN);
   openSheet(`<h3>Membros e funções</h3><p>Marque o que cada um costuma fazer. Na hora de escalar, essas pessoas aparecem primeiro na caixa, mas qualquer membro pode ser escolhido.</p>
     <div class="row2 e-addm"><input class="inp" id="e-mnew" placeholder="Nome do membro novo" autocomplete="off" maxlength="60" enterkeyhint="done"><button class="btn pri" data-act="e-madd">Adicionar</button></div>
-    <div class="e-mlist">${ppl.length ? ppl.map(m => `<div class="e-mrow"><div class="e-mtop"><b>${esc(m.n)}</b><button class="iconbtn sm" data-act="e-mrm" data-n="${esc(m.n)}" aria-label="Tirar ${esc(m.n)} da lista">${ICON.x}</button></div><div class="e-fchips" role="group" aria-label="Funções de ${esc(m.n)}">${fns.map(f => `<button data-act="e-mf" data-n="${esc(m.n)}" data-r="${f}" aria-pressed="${m.f.includes(f)}">${EFN[f]}</button>`).join('')}</div></div>`).join('') : '<p class="hint">Nenhum membro ainda. Escreva o nome e toque em Adicionar.</p>'}</div>
+    <div class="e-mlist">${ppl.length ? ppl.map(m => `<div class="e-mrow"><div class="e-mtop"><button class="e-mname" data-act="e-mren" data-n="${esc(m.n)}" aria-label="Editar o nome de ${esc(m.n)}"><b>${esc(m.n)}</b><i>${ICON.edit}</i></button><button class="iconbtn sm" data-act="e-mrm" data-n="${esc(m.n)}" aria-label="Tirar ${esc(m.n)} da lista">${ICON.x}</button></div><div class="e-fchips" role="group" aria-label="Funções de ${esc(m.n)}">${fns.map(f => `<button data-act="e-mf" data-n="${esc(m.n)}" data-r="${f}" aria-pressed="${m.f.includes(f)}">${EFN[f]}</button>`).join('')}</div></div>`).join('') : '<p class="hint">Nenhum membro ainda. Escreva o nome e toque em Adicionar.</p>'}</div>
     <button class="btn wide e-mt" data-act="sheet-done">Pronto</button>`, { members: true });
 }
 function openEscAdd() {
@@ -2201,6 +2220,21 @@ function escClick(b, act, p) {
       escSaveRoster(ppl, 'Adicionou ' + n + ' aos membros');
       openEscMembers();
       toast(n + ' adicionado');
+      break;
+    }
+    case 'e-mine': openEscDay(b.dataset.id, true); break;
+    case 'e-mren': {
+      const n = b.dataset.n, top = b.closest('.e-mtop');
+      top.innerHTML = `<div class="e-mrename"><input class="inp" id="e-mrn" value="${esc(n)}" data-old="${esc(n)}" maxlength="60" autocomplete="off" enterkeyhint="done" aria-label="Novo nome"><button class="btn pri" data-act="e-mren-ok">Salvar</button><button class="iconbtn sm" data-act="e-mren-no" aria-label="Cancelar">${ICON.x}</button></div>`;
+      const inp = $('#e-mrn');
+      inp.focus();
+      inp.select();
+      break;
+    }
+    case 'e-mren-no': openEscMembers(); break;
+    case 'e-mren-ok': {
+      const inp = $('#e-mrn');
+      if (inp) escRename(inp.dataset.old, titleCase(inp.value.trim()));
       break;
     }
     case 'e-mrm': {
@@ -2309,6 +2343,24 @@ function openFromHash() {
   if (h === 'setup') { if (!S.ready && STORE && $('#gate')) openGate('setup'); return; }
   if (!h) return;
   if (!S.ready) { pendingHash = h; return; }
+  if (h.startsWith('escala-')) {
+    const id = h.slice(7), e = escById(id);
+    if (!e) { /* a escala pode chegar um pouco depois dos cultos */
+      if (pendingHash !== h) setTimeout(() => { if (pendingHash === h) { pendingHash = ''; toast('Não achei essa escala.'); } }, 9000);
+      pendingHash = h;
+      return;
+    }
+    if (!e.pub && !isAdmin()) { toast('A escala deste dia ainda não está pronta.'); return; }
+    const tp = topPanel();
+    if (tp && tp._kind === 'esc' && tp._id === id) return;
+    S.tab = 'escala';
+    ES.ym = ymOf(e.date);
+    { const i = daysOf(ES.ym, 0).indexOf(e.date); ES.step = ES.dstep = i >= 0 ? i + 1 : 1; }
+    renderTabs();
+    renderEscala(true);
+    openEscDay(id, true, true);
+    return;
+  }
   const l = listById(h), so = l ? null : songById(h);
   if (!l && !so) {
     if (STORE && !STORE.synced()) { pendingHash = h; return; } /* os dados ainda estão chegando */
@@ -2649,6 +2701,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'ba-pass') { e.preventDefault(); const b = $('[data-act="become-admin-go"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'ap-new') { e.preventDefault(); const b = $('[data-act="admin-pass-go"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.enew != null) { e.preventDefault(); const b = e.target.parentNode.querySelector('[data-act="e-newok"]'); if (b) b.click(); return; }
+  if (e.key === 'Enter' && id === 'e-mrn') { e.preventDefault(); const b = $('[data-act="e-mren-ok"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'e-mnew') { e.preventDefault(); const b = $('[data-act="e-madd"]'); if (b) b.click(); return; }
   if (e.key === 'Escape' && !HAS_CW && backLayers() > 0) goBack(); /* no Chrome, o Esc chega pelo vigia */
 });

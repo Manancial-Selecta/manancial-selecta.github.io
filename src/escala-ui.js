@@ -110,8 +110,7 @@ export function dayMsg(e, l, H) {
   }
   if (l && l.diz) L.push('', '*DÍZIMOS* : ' + itemText(l.diz, H.songById));
   if (l && l.aviso) L.push('', '⚠️ ' + UP(l.aviso));
-  if (l && l.items.length && H.listExists(l.id)) L.push('', '*CIFRAS E VÍDEOS NO APP* :', H.appUrl + '#' + l.id);
-  else L.push('', '*ESCALA NO APP* :', H.appUrl);
+  L.push('', l && l.items.length ? '*SUA ESCALA, LOUVORES E CIFRAS NO APP* :' : '*SUA ESCALA NO APP* :', H.appUrl + '#escala-' + e.id);
   return L.join('\n');
 }
 export function monthMsg(ym, get, appUrl) {
@@ -188,8 +187,12 @@ export function slotsHTML(e, me) {
   return x + '</div>';
 }
 const listSeqLen = l => l.items.length + (l.diz ? 1 : 0);
+export function youHTML(e, me) {
+  const rs = me ? rolesOf(e, me) : [];
+  return rs.length ? `<div class="e-you"><span>Você</span><b>${rs.join(' e ')}</b></div>` : '';
+}
 export function readCultoHTML(e, l, H) {
-  let x = slotsHTML(e, H.me);
+  let x = youHTML(e, H.me) + slotsHTML(e, H.me);
   if (!l || !listSeqLen(l)) return x + '<p class="e-note">Os louvores deste culto ainda não estão prontos.</p>';
   x += `<div class="e-csec"><h3>Louvores</h3></div><ol class="e-ro">${l.items.map((it, i) => {
     const so = H.songById(it.songId);
@@ -221,7 +224,7 @@ export function mineHTML(list, ym, me) {
   const rows = [];
   list.forEach(e => {
     const rs = rolesOf(e, me);
-    if (rs.length) rows.push(`<li><span class="d">${WS[dObj(e.date).getDay()]} ${dm(e.date)}</span><span>${rs.join(' e ')}${e.kind !== 'dom' && e.kind !== 'sex' ? ' · ' + esc(escLabel(e)) : ''}</span></li>`);
+    if (rs.length) rows.push(`<li><button data-act="e-mine" data-id="${esc(e.id)}"><span class="d">${WS[dObj(e.date).getDay()]} ${dm(e.date)}</span><span class="t">${rs.join(' e ')}${e.kind !== 'dom' && e.kind !== 'sex' ? ' · ' + esc(escLabel(e)) : ''}</span>${ICON.chev}</button></li>`);
   });
   return `<section class="e-mine" aria-label="Sua escala"><div class="lbl">Sua escala em ${monName(ym)}</div>${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="none">Você não está escalado neste mês.</p>'}</section>`;
 }
