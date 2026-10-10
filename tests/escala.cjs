@@ -196,9 +196,13 @@ async function until(fn, ms) {
     check(await page.locator('.e-top').first().textContent() === 'Toque na data para ver a escala do dia.', 'aviso de tocar na data em cima');
     check(await page.locator('.e-grid span.me').count() >= 1, 'nome do membro destacado na grade');
     await page.click('.e-grid .dh >> text=11/10');
-    check(await page.locator('#tab-escala .e-ro button').count() === 5 && await page.locator('#tab-escala [data-act="e-daymsg"]').count() === 0, 'membro vê os louvores do domingo, sem botão de WhatsApp');
+    check(await page.locator('#tab-escala .e-ro button').count() === 6 && await page.locator('#tab-escala [data-act="e-daymsg"]').count() === 0, 'membro vê os louvores do domingo, sem botão de WhatsApp');
     check(/Back e Teclado/.test(await page.locator('#tab-escala .e-you').textContent()), 'membro vê a função dele em destaque');
     await page.screenshot({ path: path.join(SHOTS, 'e5-membro.png'), fullPage: true });
+    await page.locator('#tab-escala .e-ro button').last().click();
+    await page.waitForSelector('.panel');
+    check(/Teu Amor Não Falha/.test(await page.locator('.panel').last().textContent()), 'dízimo abre o louvor também');
+    await page.keyboard.press('Escape');
     await page.locator('#tab-escala .e-ro button').first().click();
     await page.waitForSelector('.panel .cifra, .panel [data-el="cifra"], .panel .p-head');
     check(await page.locator('.panel').count() === 1, 'tocar no louvor abre o louvor');
@@ -213,7 +217,7 @@ async function until(fn, ms) {
     /* link da mensagem do dia abre a escala do dia */
     await page.goto(BASE + '#escala-2026-10-11dom');
     await page.waitForSelector('.panel .e-you');
-    check(/Back e Teclado/.test(await page.locator('.panel .e-you').textContent()) && await page.locator('.panel .e-ro button').count() === 5, 'link abre a escala do dia com a função da pessoa');
+    check(/Back e Teclado/.test(await page.locator('.panel .e-you').textContent()) && await page.locator('.panel .e-ro button').count() === 6, 'link abre a escala do dia com a função da pessoa');
     await page.screenshot({ path: path.join(SHOTS, 'e6-link.png') });
     await ctx.close();
   } catch (e) {

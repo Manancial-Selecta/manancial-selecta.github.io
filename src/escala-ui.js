@@ -197,7 +197,7 @@ export function readCultoHTML(e, l, H) {
     const so = H.songById(it.songId);
     return so ? `<li><button data-act="open-item" data-list="${esc(l.id)}" data-idx="${i}"><b>${i + 1}</b><span>${esc(so.title)}</span>${it.key ? `<span class="kmini">${esc(it.key)}</span>` : ''}</button></li>` : '';
   }).join('')}</ol>`;
-  if (l.diz && H.songById(l.diz.songId)) x += `<div class="e-meta"><span><b>Dízimos:</b> ${esc(H.songById(l.diz.songId).title)}${l.diz.key ? ' · ' + esc(l.diz.key) : ''}</span></div>`;
+  if (l.diz && H.songById(l.diz.songId)) x += `<div class="e-dizlbl">Dízimos</div><ol class="e-ro"><li><button data-act="open-item" data-list="${esc(l.id)}" data-idx="${l.items.length}"><b></b><span>${esc(H.songById(l.diz.songId).title)}</span>${l.diz.key ? `<span class="kmini">${esc(l.diz.key)}</span>` : ''}</button></li></ol>`;
   x += '<div class="e-meta">' + (l.reh && l.reh.time ? `<span><b>Ensaio:</b> ${WD[dObj(l.reh.date).getDay()].toLowerCase()} ${dm(l.reh.date)} às ${l.reh.time.replace(':', 'h')}</span>` : '') + (l.aviso ? `<span class="e-av">⚠️ ${esc(l.aviso)}</span>` : '') + '</div>';
   return x;
 }

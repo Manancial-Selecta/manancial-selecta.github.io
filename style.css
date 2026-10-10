@@ -677,3 +677,5 @@ textarea.inp.e-aviso { margin-top: 12px; min-height: 84px; height: 84px; font-fa
 .e-srow .n { line-height: 54px; }
 .e-srow .e-mv { padding-top: 2px; }
 .e-srow .e-x { margin-top: 6px; }
+.e-dizlbl { margin-top: 16px; font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-text); }
+.e-dizlbl + .e-ro { margin-top: 4px; }
