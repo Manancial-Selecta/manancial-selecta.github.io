@@ -108,7 +108,7 @@ async function until(fn, ms) {
     /* domingo: já vem com os membros e com os louvores do culto que existe */
     await page.click('[data-act="e-sub"][data-v="dom"]');
     check(await page.locator('#tab-escala [data-ek="min"]').inputValue() === 'Marcos', 'domingo vem preenchido da mensal');
-    check(await page.locator('#tab-escala [data-esong]').count() === 4, 'louvores do culto que já existia', await page.locator('#tab-escala [data-esong]').count());
+    check(await page.locator('#tab-escala .e-srow [data-esq]').count() === 4 && /^Vim Para Adorar/.test(await page.locator('#tab-escala [data-esq="0"]').inputValue()), 'louvores do culto que já existia', await page.locator('#tab-escala .e-srow [data-esq]').count());
     await page.click('#tab-escala [data-act="e-cpub"]');
     check(await page.locator('#tab-escala .e-done').count() === 1, 'Salvar escala do domingo');
     d = await D();
@@ -116,7 +116,10 @@ async function until(fn, ms) {
     check(l11.items.length === 4 && l11.diz && l11.minister === 'Marcos', 'culto continua com os louvores', l11);
     /* depois de salvo, muda direto no culto */
     const sub = d.songs.find(s => s.title === 'Sublime').id;
-    await page.selectOption('#tab-escala [data-esong="0"]', sub);
+    await page.fill('#tab-escala [data-esq="0"]', 'subl');
+    check(await page.locator('#tab-escala [data-esq="0"] ~ .ac-list .ac-item').first().textContent() === 'SublimeFhop · sem cifra', 'sugestões enquanto digita', await page.locator('#tab-escala [data-esq="0"] ~ .ac-list').textContent());
+    await page.screenshot({ path: path.join(SHOTS, 'e7-sugestoes.png') });
+    await page.locator('#tab-escala [data-esq="0"] ~ .ac-list [data-act="e-pick"]').first().click();
     d = await D();
     l11 = d.lists.find(l => l.id === 'l20261011');
     check(l11.items[0].songId === sub && l11.items[0].key === 'D', 'troca de louvor vai para o culto', l11.items[0]);
@@ -124,10 +127,11 @@ async function until(fn, ms) {
     d = await D();
     check(d.lists.find(l => l.id === 'l20261011').items[1].songId === sub, 'setas mudam a ordem no culto');
     await page.click('#tab-escala [data-act="e-sadd"]');
-    check(await page.locator('#tab-escala [data-esong]').count() === 5, 'adicionar louvor abre mais uma caixa');
-    await page.selectOption('#tab-escala [data-esong="4"]', '__new');
-    await page.fill('#tab-escala #en-4', 'louvor novo teste');
-    await page.press('#tab-escala #en-4', 'Enter');
+    check(await page.locator('#tab-escala .e-srow [data-esq]').count() === 5, 'adicionar louvor abre mais uma caixa');
+    check(await page.evaluate(() => document.activeElement && document.activeElement.dataset.esq === '4'), 'cursor já na caixa nova');
+    await page.fill('#tab-escala [data-esq="4"]', 'louvor novo teste');
+    check(/Novo no repertório: “Louvor Novo Teste”/.test(await page.locator('#tab-escala [data-esq="4"] ~ .ac-list').textContent()), 'oferece cadastrar o louvor que não existe');
+    await page.press('#tab-escala [data-esq="4"]', 'Enter');
     d = await D();
     const nsong = d.songs.find(s => s.title === 'Louvor Novo Teste');
     check(nsong && d.lists.find(l => l.id === 'l20261011').items.some(it => it.songId === nsong.id), 'louvor que não estava na lista entra no repertório e no culto');
@@ -156,7 +160,8 @@ async function until(fn, ms) {
     check(await page.locator('.panel [data-ereh="time"]').inputValue() === '19:00', 'ensaio de sexta às 19h');
     await page.selectOption('.panel [data-ek="min"]', 'Tiago');
     const oce = d.songs.find(s => s.title === 'Oceanos').id;
-    await page.selectOption('.panel [data-esong="0"]', oce);
+    await page.fill('.panel [data-esq="0"]', 'ocea');
+    await page.locator('.panel [data-esq="0"] ~ .ac-list [data-id="' + oce + '"]').click();
     await page.click('.panel [data-act="e-cpub"]');
     d = await D();
     const l16 = d.lists.find(l => l.date === '2026-10-16');

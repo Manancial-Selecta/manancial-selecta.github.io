@@ -10,7 +10,7 @@ import { guitarShapes, guitarSVG, keyboardSVG, keyboardNotes, chordsOfLines } fr
 import { ytId, ytWatch, ytThumb, ytEmbed, ytSearch } from './youtube.js';
 import { ICON } from './icons.js';
 import { createLocalStore } from './store-local.js';
-import { EFN, escNew, escLabel, daysOf, monName, listFor, viewOf, listFromView, dayMsg, monthMsg, headHTML, navHTML as escNavHTML, fieldsHTML, cultoEditHTML, readCultoHTML, gridHTML, mineHTML, weekListHTML, rolesOf, eid, dateSelectHTML, monthImage } from './escala-ui.js';
+import { EFN, songLabel, escNew, escLabel, daysOf, monName, listFor, viewOf, listFromView, dayMsg, monthMsg, headHTML, navHTML as escNavHTML, fieldsHTML, cultoEditHTML, readCultoHTML, gridHTML, mineHTML, weekListHTML, rolesOf, eid, dateSelectHTML, monthImage } from './escala-ui.js';
 
 /* ===== Estado ===== */
 const S = {
@@ -1906,7 +1906,7 @@ function deleteSong(p) {
 }
 
 /* ===== Escala: a líder (administrador) monta; os membros só veem o que foi salvo ===== */
-const ES = { sub: 'mes', ym: '', step: 1, dstep: 1, blank: {}, newBox: null, hold: false };
+const ES = { sub: 'mes', ym: '', step: 1, dstep: 1, blank: {}, hold: false };
 const ymOf = iso => iso.slice(0, 7);
 const escId = (date, kind, name) => date + kind + (kind === 'outro' ? '-' + normKey(name).slice(0, 30) : '');
 const escById = id => (DATA.escala || []).find(e => e.id === id);
@@ -2012,8 +2012,7 @@ function escSaveRoster(people, what) { apply({ escala: [{ id: 'membros', people,
 
 /* ---- telas ---- */
 function escEditorHTML(e, nav, note) {
-  const nb = ES.newBox && ES.newBox.id === e.id ? ES.newBox.i : null;
-  let x = `<section class="e-ed" ${eid(e)}>${headHTML(e, nav)}${note ? `<p class="e-count">${note}</p>` : ''}${fieldsHTML(e, roster())}${cultoEditHTML(e, escView(e), DATA.songs.slice().sort(byTitle), nb)}`;
+  let x = `<section class="e-ed" ${eid(e)}>${headHTML(e, nav)}${note ? `<p class="e-count">${note}</p>` : ''}${fieldsHTML(e, roster())}${cultoEditHTML(e, escView(e), DATA.songs)}`;
   x += e.cpub ? '<p class="e-done">Escala salva. O que você mudar aqui aparece na hora para todos.</p>' : '<button class="btn pri wide e-big" data-act="e-cpub">Salvar escala</button><p class="e-hint c">Só você vê até salvar.</p>';
   return x + `<button class="btn wide e-mt" data-act="e-daymsg">${ICON.send}Mensagem do dia no WhatsApp</button></section>`;
 }
@@ -2163,8 +2162,8 @@ function escClick(b, act, p) {
       if (!e) break;
       if (e.cpub && escView(e).live) { ES.blank[e.id] = (ES.blank[e.id] || 0) + 1; escRefresh(b); }
       else { const v = escView(e); v.items.push(''); escPut(e, v, 'Mudou os louvores'); }
-      const sel = $$(`[data-eid="${CSS.escape(e.id)}"] [data-esong]`).pop();
-      if (sel) try { sel.focus({ preventScroll: true }); } catch (x) { /* ok */ }
+      const sel = $$(`[data-eid="${CSS.escape(e.id)}"] .e-srow [data-esq]`).pop();
+      if (sel) try { sel.focus(); } catch (x) { /* ok */ }
       break;
     }
     case 'e-srm': case 'e-smv': {
@@ -2172,23 +2171,24 @@ function escClick(b, act, p) {
       const v = escView(e), i = +b.dataset.i;
       if (act === 'e-srm') v.items.splice(i, 1);
       else { const j = i + (+b.dataset.d); if (j < 0 || j >= v.items.length) break; [v.items[i], v.items[j]] = [v.items[j], v.items[i]]; }
-      if (ES.newBox && ES.newBox.id === e.id) ES.newBox = null;
       escPut(e, v, 'Mudou os louvores');
       break;
     }
-    case 'e-newok': {
+    case 'e-pick': case 'e-picknew': {
       if (!e) break;
-      const i = b.dataset.i, inp = $(`#en-${i}`, b.closest('[data-eid]'));
-      const title = titleCase((inp && inp.value || '').trim());
-      if (!title) { if (inp) inp.focus(); toast('Escreva o nome do louvor'); break; }
-      let so = matchSong(title);
-      const isNew = !so;
-      if (isNew) { so = Object.assign(blankSong(title), { up: Date.now() }); apply({ songs: [so] }, { what: 'Cadastrou o louvor ' + title }); }
-      const v = escView(escCtx(b) || e);
-      if (i === 'diz') v.diz = so.id; else v.items[+i] = so.id;
-      ES.newBox = null;
-      escPut(escCtx(b) || e, v, 'Mudou os louvores');
-      if (isNew) toast(so.title + ' entrou no repertório. Depois coloque a cifra.');
+      const k = b.dataset.k, sec = b.closest('[data-eid]'), inPanel = !!b.closest('.panel');
+      let so = act === 'e-pick' ? songById(b.dataset.id) : null;
+      if (act === 'e-picknew') {
+        const title = titleCase(b.dataset.q || '');
+        if (!title) break;
+        so = matchSong(title);
+        if (!so) { so = Object.assign(blankSong(title), { up: Date.now() }); apply({ songs: [so] }, { what: 'Cadastrou o louvor ' + title }); toast(title + ' entrou no repertório. Depois coloque a cifra.'); }
+      }
+      if (!so) break;
+      const cur = escCtx(sec) || e, v = escView(cur);
+      if (k === 'diz') v.diz = so.id; else v.items[+k] = so.id;
+      escPut(cur, v, 'Mudou os louvores');
+      if (inPanel) { const pp = topPanel(); if (pp && pp._kind === 'esc') refreshEscPanel(pp, true); } else renderEscala(true);
       break;
     }
     case 'e-daymsg': if (e) escShowMsg('Mensagem do dia', escDayMsg(e)); break;
@@ -2278,19 +2278,51 @@ function escClick(b, act, p) {
     default: break;
   }
 }
+/* sugestões enquanto digita o louvor */
+function escSuggest(input) {
+  const box = input.parentNode.querySelector('.ac-list'), q = input.value, nq = norm(q).trim();
+  if (!box) return;
+  if (!nq) { box.hidden = true; box.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
+  const words = nq.split(/\s+/);
+  const items = DATA.songs
+    .filter(s => { const t = norm(s.title + ' ' + (s.version || '')); return words.every(w => t.includes(w)); })
+    .sort((a, b) => (norm(a.title).startsWith(nq) ? 0 : 1) - (norm(b.title).startsWith(nq) ? 0 : 1) || byTitle(a, b))
+    .slice(0, 6);
+  const k = input.dataset.esq;
+  let h = items.map(s => `<button class="ac-item" data-act="e-pick" data-k="${k}" data-id="${esc(s.id)}" role="option"><b>${esc(s.title)}</b><span></span>${s.version || !hasCifra(s) ? `<small>${esc([s.version, hasCifra(s) ? '' : 'sem cifra'].filter(Boolean).join(' · '))}</small>` : ''}</button>`).join('');
+  if (!items.some(s => normKey(s.title) === normKey(q))) h += `<button class="ac-item new" data-act="e-picknew" data-k="${k}" data-q="${esc(q.trim())}" role="option"><b>${ICON.plus}Novo no repertório: “${esc(titleCase(q.trim()))}”</b></button>`;
+  box.innerHTML = h;
+  box.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
 /* caixas de escolha */
 function escChange(t) {
   if (t.id === 'e-sdate') { $('#e-sother').hidden = t.value !== '__other'; if (t.value === '__other') $('#e-sother').focus(); return true; }
   if (!t.closest || !t.closest('[data-eid]') || !isAdmin()) return false;
   const e = escCtx(t), d = t.dataset;
   if (d.ek) escSetSlot(e, d.ek, t.value);
-  else if (d.esong != null || d.ediz) {
-    const i = d.ediz ? 'diz' : +d.esong;
-    if (t.value === '__new') { ES.newBox = { id: e.id, i }; escRefresh(t, '#en-' + i); return true; }
-    const v = escView(e);
-    if (i === 'diz') v.diz = t.value; else v.items[i] = t.value;
-    if (ES.newBox && ES.newBox.id === e.id) ES.newBox = null;
-    escPut(e, v, 'Mudou os louvores');
+  else if (d.esq != null) {
+    /* escolher é pela lista de sugestões; aqui só trata apagar ou nome digitado igual a um louvor */
+    const q = t.value.trim(), k = d.esq;
+    if (!q && d.cur) {
+      const v = escView(e);
+      if (k === 'diz') v.diz = ''; else v.items[+k] = '';
+      d.cur = '';
+      ES.hold = true;
+      try { escPut(e, v, 'Mudou os louvores'); } finally { ES.hold = false; }
+      return true;
+    }
+    if (q && q !== d.cur) {
+      const so = DATA.songs.find(s => norm(songLabel(s)) === norm(q)) || DATA.songs.find(s => normKey(s.title) === normKey(q));
+      if (so) {
+        const v = escView(e);
+        if (k === 'diz') v.diz = so.id; else v.items[+k] = so.id;
+        t.value = d.cur = songLabel(so);
+        ES.hold = true;
+        try { escPut(e, v, 'Mudou os louvores'); } finally { ES.hold = false; }
+      } else t.value = d.cur; /* não escolheu da lista: volta como estava */
+    }
+    return true;
   } else if (d.ereh) {
     const v = escView(e);
     v.reh = Object.assign({ day: 'same', time: '' }, v.reh, { [d.ereh]: t.value });
@@ -2644,6 +2676,7 @@ document.addEventListener('change', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; renderSongs(); return; }
+  if (t.dataset && t.dataset.esq != null) { escSuggest(t); return; }
   if (t.id === 'is-obs' && sheetEl && sheetEl._ctx && sheetEl._ctx.p) { sheetItem(sheetEl._ctx).obs = t.value; refreshEditor(sheetEl._ctx.p); return; }
   if ((t.id === 'g-code' || t.id === 'g-name' || t.id === 'g-file') && $('.gerr')) gateErr('');
   if (t.id === 'g-seed') { const f = $('[data-el="seedf"]'); if (f) f.hidden = !t.checked; gateErr(''); return; }
@@ -2700,7 +2733,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && id === 'rn-name') { e.preventDefault(); const b = $('[data-act="rename-go"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'ba-pass') { e.preventDefault(); const b = $('[data-act="become-admin-go"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'ap-new') { e.preventDefault(); const b = $('[data-act="admin-pass-go"]'); if (b) b.click(); return; }
-  if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.enew != null) { e.preventDefault(); const b = e.target.parentNode.querySelector('[data-act="e-newok"]'); if (b) b.click(); return; }
+  if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.esq != null) { e.preventDefault(); const b = e.target.parentNode.querySelector('.ac-list:not([hidden]) .ac-item'); if (b) b.click(); else e.target.blur(); return; }
   if (e.key === 'Enter' && id === 'e-mrn') { e.preventDefault(); const b = $('[data-act="e-mren-ok"]'); if (b) b.click(); return; }
   if (e.key === 'Enter' && id === 'e-mnew') { e.preventDefault(); const b = $('[data-act="e-madd"]'); if (b) b.click(); return; }
   if (e.key === 'Escape' && !HAS_CW && backLayers() > 0) goBack(); /* no Chrome, o Esc chega pelo vigia */

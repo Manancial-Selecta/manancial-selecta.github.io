@@ -151,23 +151,22 @@ function selectHTML(e, f, people) {
 }
 export const fieldsHTML = (e, people) => '<div class="e-fields">' + EFIELDS.map(f => f.sec ? `<div class="e-fsec">${f.sec}</div>` : f.line ? '<div class="e-fline"></div>' : selectHTML(e, f, people)).join('') + '</div>';
 
-function songSelect(val, attrs, ph, songs, newTitle) {
-  return `<div class="e-sw"><select class="e-sel ${val ? 'on' : 'empty'} e-song" ${attrs}>
-    <option value="">${ph}</option>${songs.map(s => `<option value="${esc(s.id)}"${s.id === val ? ' selected' : ''}>${esc(s.title)}${s.version ? ' · ' + esc(s.version) : ''}</option>`).join('')}
-    <option value="__new">${newTitle}</option></select></div>`;
+/* caixa de digitar o louvor: as sugestões aparecem embaixo enquanto digita */
+export const songLabel = so => so ? so.title + (so.version ? ' · ' + so.version : '') : '';
+function songInput(e, val, key, label, ph, songs) {
+  const so = val ? songs.find(s => s.id === val) : null, t = songLabel(so), id = 'es-' + e.id.replace(/[^\w-]/g, '') + '-' + key;
+  return `<div class="ac e-ac"><input class="inp e-songin${so ? ' on' : ''}" id="${id}" data-esq="${key}" value="${esc(t)}" data-cur="${esc(t)}" placeholder="${ph}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" role="combobox" aria-expanded="false" aria-controls="${id}-l" aria-autocomplete="list" aria-label="${label}"><div class="ac-list" id="${id}-l" role="listbox" hidden></div></div>`;
 }
-export function cultoEditHTML(e, v, songs, newBox) {
+export function cultoEditHTML(e, v, songs) {
   const n = v.items.length;
   let x = `<div class="e-csec"><h3>Louvores</h3><span>${v.items.filter(Boolean).length} escolhidos</span></div><div class="e-srows">`;
   v.items.forEach((id, i) => {
-    x += `<div class="e-srow"><span class="n">${i + 1}</span>${songSelect(id, `data-esong="${i}" aria-label="Louvor ${i + 1}"`, 'Escolher louvor…', songs, '+ Louvor que não está na lista')}
+    x += `<div class="e-srow"><span class="n">${i + 1}</span>${songInput(e, id, i, 'Louvor ' + (i + 1), 'Digite o nome do louvor', songs)}
       <div class="e-mv"><button data-act="e-smv" data-i="${i}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Subir">${ICON.up}</button><button data-act="e-smv" data-i="${i}" data-d="1" ${i === n - 1 ? 'disabled' : ''} aria-label="Descer">${ICON.down}</button></div>
-      <button class="e-x" data-act="e-srm" data-i="${i}" aria-label="Remover louvor ${i + 1}">${ICON.x}</button>
-      ${newBox === i ? `<div class="e-newsong"><input class="inp" id="en-${i}" data-enew="${i}" placeholder="Nome do louvor novo" autocomplete="off" enterkeyhint="done"><button class="btn pri" data-act="e-newok" data-i="${i}">Ok</button></div>` : ''}</div>`;
+      <button class="e-x" data-act="e-srm" data-i="${i}" aria-label="Remover louvor ${i + 1}">${ICON.x}</button></div>`;
   });
   x += `</div><button class="e-add" data-act="e-sadd">${ICON.plus}Adicionar louvor</button>
-    <div class="e-diz"><div class="e-lbl">Dízimos</div>${songSelect(v.diz, 'data-ediz="1" aria-label="Louvor dos dízimos"', 'Escolher louvor dos dízimos…', songs, '+ Louvor que não está na lista')}
-    ${newBox === 'diz' ? `<div class="e-newsong"><input class="inp" id="en-diz" data-enew="diz" placeholder="Nome do louvor novo" autocomplete="off" enterkeyhint="done"><button class="btn pri" data-act="e-newok" data-i="diz">Ok</button></div>` : ''}</div>`;
+    <div class="e-diz"><div class="e-lbl">Dízimos</div>${songInput(e, v.diz, 'diz', 'Louvor dos dízimos', 'Digite o louvor dos dízimos', songs)}</div>`;
   const before = addDays(e.date, -1);
   x += `<div class="e-csec"><h3>Ensaio</h3></div><div class="e-row2">
     <div class="e-sw"><select class="e-sel on e-small" id="er-day-${esc(e.id)}" data-ereh="day" aria-label="Dia do ensaio"><option value="same"${v.reh.day !== 'before' ? ' selected' : ''}>No dia, ${dm(e.date)}</option><option value="before"${v.reh.day === 'before' ? ' selected' : ''}>${WD[dObj(before).getDay()]}, ${dm(before)}</option></select></div>
