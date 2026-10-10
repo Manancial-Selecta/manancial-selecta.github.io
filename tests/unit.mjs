@@ -176,6 +176,7 @@ eq(ytId('não é link'), '', 'texto qualquer');
   eq(dayMsg(normEsc({ id: 'x', date: '2026-10-17', kind: 'jovens', slots: {} }), null, H).split('\n')[0], '*ESCALA DO SÁBADO DIA 17/10 - CULTO DE JOVENS*', 'jovens no título');
   ok(/\*SUA ESCALA NO APP\* :\nhttps:\/\/x\/#escala-2026-10-04dom$/.test(dayMsg(ceia, null, H)), "sem louvores, link da escala");
   const mm = monthMsg('2026-10', (d, k) => d === '2026-10-11' && k === 'dom' ? e : null, 'https://x/');
+  ok(/\*SUA ESCALA NO APP\* :\nhttps:\/\/x\/#escala-mes-2026-10$/.test(mm), 'link da escala do mês');
   ok(/DOMINGOS DE OUTUBRO/.test(mm) && /\*DOMINGO 04\/10\* · CULTO DE CEIA/.test(mm) && /\*BACKS\* : CARLA, BIA/.test(mm), 'mensagem do mês');
   eq(daysOf('2026-11', 0), ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-22', '2026-11-29'], 'domingos do mês');
   ok(sameName('Júlia', 'julia souza') && !sameName('Ana', 'Bia') && !sameName('', 'x'), 'mesmo nome');

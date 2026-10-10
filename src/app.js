@@ -2375,6 +2375,18 @@ function openFromHash() {
   if (h === 'setup') { if (!S.ready && STORE && $('#gate')) openGate('setup'); return; }
   if (!h) return;
   if (!S.ready) { pendingHash = h; return; }
+  if (/^escala-mes-\d{4}-\d{2}$/.test(h)) { /* link da escala do mês: abre a aba com "Sua escala" em cima */
+    while (stack.length) closePanel();
+    S.tab = 'escala';
+    ES.ym = h.slice(11);
+    ES.sub = 'mes';
+    const t = today(), i = daysOf(ES.ym, 0).findIndex(x => x >= t);
+    ES.step = ES.dstep = i >= 0 ? i + 1 : 1;
+    renderTabs();
+    renderEscala(true);
+    window.scrollTo(0, 0);
+    return;
+  }
   if (h.startsWith('escala-')) {
     const id = h.slice(7), e = escById(id);
     if (!e) { /* a escala pode chegar um pouco depois dos cultos */

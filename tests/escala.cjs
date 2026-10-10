@@ -205,6 +205,11 @@ async function until(fn, ms) {
     await page.keyboard.press('Escape');
     await page.click('[data-act="e-sub"][data-v="sem"]');
     check(await page.locator('#tab-escala .e-wcard.me').count() === 0 && await page.locator('#tab-escala .e-wcard').count() === 1, 'membro vê a sexta salva');
+    /* link da mensagem do mês abre a aba com Sua escala */
+    await page.goto(BASE + '#escala-mes-2026-10');
+    await page.waitForSelector('#tab-escala:not([hidden]) .e-mine');
+    check(/Back e Teclado/.test(await page.locator('#tab-escala .e-mine').textContent()) && await page.locator('.panel').count() === 0, 'link do mês abre Sua escala');
+    await page.goto(BASE + '#');
     /* link da mensagem do dia abre a escala do dia */
     await page.goto(BASE + '#escala-2026-10-11dom');
     await page.waitForSelector('.panel .e-you');

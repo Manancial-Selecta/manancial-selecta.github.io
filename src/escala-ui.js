@@ -122,7 +122,7 @@ export function monthMsg(ym, get, appUrl) {
     L.push(`Teclado: ${n('tec')}`, `Bateria: ${n('bat')}`, `Guitarra: ${n('gui')}`, `Violão: ${n('vio')}`, `Baixo: ${n('bai')}`);
     if (s.mid || s.som) L.push(`Mídia: ${n('mid')} · Som: ${n('som')}`);
   });
-  L.push('', '━━━━━━━━━━━━', 'Sua escala e os louvores de cada culto no app:', appUrl);
+  L.push('', '━━━━━━━━━━━━', '*SUA ESCALA NO APP* :', appUrl + '#escala-mes-' + ym);
   return L.join('\n');
 }
 
