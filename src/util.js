@@ -34,6 +34,7 @@ export const wdShort = iso => wd(iso).slice(0, 3).toUpperCase();
 export const dm = iso => { const d = dObj(iso); return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1); };
 export const longDate = iso => { const d = dObj(iso); return wd(iso) + ', ' + d.getDate() + ' de ' + MOL[d.getMonth()]; };
 export const relDay = iso => iso === today() ? 'Hoje' : iso === addDays(today(), 1) ? 'Amanhã' : '';
+export const hmShort = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? (+m[1]) + 'h' + (m[2] === '00' ? '' : m[2]) : ''; };
 export const hm = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? (+m[1]) + 'h' + m[2] : ''; };
 
 /* ===== Nomes ===== */

@@ -10,7 +10,7 @@ import { stretch, semis } from '../src/stretch.js';
 import { fromPrototype, normSong, normList } from '../src/model.js';
 import { ytId } from '../src/youtube.js';
 import { normEsc } from '../src/model.js';
-import { dayMsg, monthMsg, dateOptions, daysOf, sameName, rolesOf, viewOf, listFromView, escNew } from '../src/escala-ui.js';
+import { dayMsg, monthMsg, dateOptions, daysOf, sameName, rolesOf, viewOf, listFromView, escNew, listFor } from '../src/escala-ui.js';
 
 let fails = 0, count = 0;
 const eq = (got, want, name) => {
@@ -188,6 +188,27 @@ eq(ytId('não é link'), '', 'texto qualquer');
   eq([vv.items, vv.reh, vv.live], [['a', '', ''], { day: 'before', time: '19:00' }, null], 'sem rascunho, começa pelo culto que já existe');
   const v2 = viewOf(Object.assign(escNew('2026-10-16', 'sex'), {}), [], {}, 0);
   eq([v2.items, v2.reh], [['', '', ''], { day: 'same', time: '19:00' }], 'sexta nova: 3 louvores e ensaio 19h');
+}
+
+/* ===== Dois cultos no mesmo dia ===== */
+{
+  const songs = [{ id: 'a', title: 'Oceanos', version: '', keys: {} }];
+  const sb = id => songs.find(s => s.id === id);
+  const l = normList({ id: 'l20261018n2', date: '2026-10-18', time: '19:00', kind: '', minister: 'Ana', items: [{ songId: 'a', key: 'G' }] });
+  eq(l.time, '19:00', 'culto guarda o horário');
+  eq(normList({ id: 'x', date: '2026-10-18', time: 'manhã' }).time, '', 'horário inválido fica vazio');
+  eq(waText(l, sb, 'https://x/').split('\n')[0], '*LOUVORES DO DOMINGO DIA 18/10 ÀS 19H*', 'título com horário');
+  eq(waText(Object.assign({}, l, { time: '09:30' }), sb, 'https://x/').split('\n')[0], '*LOUVORES DO DOMINGO DIA 18/10 ÀS 9H30*', 'horário com minutos');
+  eq(parseMessage('*LOUVORES DO DOMINGO DIA 18/10 ÀS 19H*\nMINISTRO: ANA').time, '19:00', 'lê o horário do título');
+  eq(parseMessage('*LOUVORES DO DOMINGO DIA 18/10*\nENSAIO: DOMINGO 18/10 ÀS 15H45').time, '', 'ensaio não vira horário do culto');
+  const lists = [{ id: 'm', date: '2026-10-18', time: '', kind: '', items: [] }, { id: 'n', date: '2026-10-18', time: '19:00', kind: '', items: [] }];
+  eq(listFor(escNew('2026-10-18', 'dom'), lists).id, 'm', 'escala do domingo fica com o culto principal');
+  eq(listFor(escNew('2026-10-18', 'dom', '', '19:00'), lists).id, 'n', 'segundo culto fica com o culto da noite');
+  eq(listFor(escNew('2026-10-18', 'dom'), [{ id: 'p', date: '2026-10-18', time: '09:00', kind: '', items: [] }, lists[1]]).id, 'p', 'sem culto sem horário: o primeiro do dia');
+  const e2 = normEsc({ id: '2026-10-18dom-1900', date: '2026-10-18', time: '19:00', kind: 'dom', slots: { min: 'Ana' } });
+  eq(dayMsg(e2, null, { songById: sb, appUrl: 'https://x/', listExists: () => false }).split('\n')[0], '*ESCALA DO DOMINGO DIA 18/10 ÀS 19H*', 'escala do dia com horário');
+  eq(listFromView(e2, { items: ['a'], diz: '', reh: { day: 'same', time: '' }, aviso: '' }, null, { songById: sb, autoKey: () => '', newListId: () => 'l20261018n2' }).time, '19:00', 'culto criado pela escala leva o horário');
+  eq(dateOptions('dom', [{ id: '2026-10-18dom', kind: 'dom', date: '2026-10-18' }], '2026-10-14').slice(0, 2), ['2026-10-18', '2026-10-25'], 'segundo culto: próximos domingos, mesmo os que já têm culto');
 }
 
 console.log(fails ? `\n${fails} de ${count} testes falharam` : `TUDO OK (${count} testes)`);

@@ -3,7 +3,7 @@
    cifra embaixo (violão ou teclado, com os desenhos dos acordes); editores do culto e do louvor.
    Todos os membros podem editar. Os dados vêm do armazenamento: Firebase (real) ou demonstração. */
 import { MAJOR_KEYS, MINOR_KEYS, keyInfo, keyByPc, shiftKey, capoHint, chordTok, NEUTRAL_RE, analyzeLine, inlineToTwoLines, processCifra, countChordLines, detectKey } from './music.js';
-import { $, $$, esc, norm, normKey, byTitle, clone, storeGet, storeSet, uid, isIso, dObj, isoOf, today, addDays, wd, wdShort, dm, longDate, relDay, hm, MO, titleCase, initials, mergeNames, daysBetween } from './util.js';
+import { $, $$, esc, norm, normKey, byTitle, clone, storeGet, storeSet, uid, isIso, dObj, isoOf, today, addDays, wd, wdShort, dm, longDate, relDay, hm, hmShort, MO, titleCase, initials, mergeNames, daysBetween } from './util.js';
 import { parseMessage } from './parse.js';
 import { KIND_CHIPS, defaultKind, cultoName, REH_FIXED, isFixedReh, rehKey, defaultReh, rehText, hasCifra, hasSimple, cifraFor, lyricsOf, origKey, showKey, listSeq, groupItems, posOf, waText } from './domain.js';
 import { guitarShapes, guitarSVG, keyboardSVG, keyboardNotes, chordsOfLines } from './chords.js';
@@ -33,7 +33,7 @@ function ministerKey(so, name) {
   const e = name && so && so.keys ? so.keys[normKey(name)] : null;
   return e ? e.k : null;
 }
-const sortedLists = () => DATA.lists.slice().sort((a, b) => a.date.localeCompare(b.date));
+const sortedLists = () => DATA.lists.slice().sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
 const upcomingLists = () => sortedLists().filter(l => l.date >= today());
 const pastLists = () => sortedLists().filter(l => l.date < today()).reverse();
 const allPeople = () => mergeNames(DATA.people, DATA.lists.map(l => l.minister)).sort((a, b) => a.localeCompare(b, 'pt'));
@@ -88,7 +88,7 @@ function flushLog() { logWait.forEach(w => { clearTimeout(w.t); if (STORE && STO
 window.addEventListener('pagehide', flushLog);
 document.addEventListener('visibilitychange', () => { if (document.hidden) flushLog(); });
 function cultoLabel(l) {
-  const n = cultoName(l), w = wd(l.date).toLowerCase() + ' ' + dm(l.date);
+  const n = cultoName(l), w = wd(l.date).toLowerCase() + ' ' + dm(l.date) + (l.time ? ' às ' + hmShort(l.time) : '');
   return n ? n + ' (' + w + ')' : 'culto de ' + w;
 }
 
@@ -195,7 +195,7 @@ function cardHTML(l, cls) {
   const reh = cls === 'past' ? '' : rehText(l);
   return `<button class="lcard${cls ? ' ' + cls : ''}" data-act="open-list" data-id="${esc(l.id)}">
     <span class="lday"><span class="w">${rel ? rel.toUpperCase() : wdShort(l.date)}</span><span class="d">${d.getDate()}</span><span class="m">${MO[d.getMonth()]}</span></span>
-    <span class="lt">${name ? `<span class="kind">${esc(name)}</span>` : ''}<b>${esc(longDate(l.date))}</b><small>${esc(meta)}</small>${reh ? `<small class="rh">${ICON.clock}${esc(reh)}</small>` : ''}${missing && cls !== 'past' ? `<span class="chips"><span class="chip">${missing} sem cifra</span></span>` : ''}</span>
+    <span class="lt">${name ? `<span class="kind">${esc(name)}</span>` : ''}<b>${esc(longDate(l.date))}${l.time ? ' · ' + hmShort(l.time) : ''}</b><small>${esc(meta)}</small>${reh ? `<small class="rh">${ICON.clock}${esc(reh)}</small>` : ''}${missing && cls !== 'past' ? `<span class="chips"><span class="chip">${missing} sem cifra</span></span>` : ''}</span>
     <span class="chev">${ICON.chev}</span>
   </button>`;
 }
@@ -812,7 +812,7 @@ function listPanelHTML(l) {
     </div></div>
     <div class="p-body"><div class="p-in">
     <section class="hero">
-      <div class="wd">${esc(wd(l.date))}${name ? ' · ' + esc(name) : ''}${rel ? `<span class="tag">${rel}</span>` : ''}</div>
+      <div class="wd">${esc(wd(l.date))}${l.time ? ' · ' + hmShort(l.time) : ''}${name ? ' · ' + esc(name) : ''}${rel ? `<span class="tag">${rel}</span>` : ''}</div>
       <div class="dt"><span>${d.getDate()} ${MO[d.getMonth()]}</span></div>
       <div class="meta">${rehHTML}${l.minister ? `<span>${ICON.mic}Ministro ${esc(l.minister)}</span>` : ''}</div>
     </section>
@@ -1505,9 +1505,10 @@ function openListEditor(id, opts) {
     ${isNew ? '' : '<button class="linkbtn" data-act="show-paste">Colar a mensagem da escala de novo</button>'}
     <div class="row2">
       <div class="field"><label for="le-date">Data</label><input class="inp" type="date" id="le-date" data-l="date" value="${esc(d.date)}"></div>
-      <div class="field"><label for="le-min">Ministro</label><input class="inp" id="le-min" data-l="minister" value="${esc(d.minister)}" list="le-mins" placeholder="Nome" autocomplete="off"><datalist id="le-mins">${ministers.map(m => `<option value="${esc(m)}"></option>`).join('')}</datalist></div>
+      <div class="field"><label for="le-time">Horário <span class="opt">(se tiver 2 cultos)</span></label><input class="inp" type="time" id="le-time" data-l="time" value="${esc(d.time || '')}"></div>
     </div>
     <p class="hint dayhint" data-el="dayhint"></p>
+    <div class="field"><label for="le-min">Ministro</label><input class="inp" id="le-min" data-l="minister" value="${esc(d.minister)}" list="le-mins" placeholder="Nome" autocomplete="off"><datalist id="le-mins">${ministers.map(m => `<option value="${esc(m)}"></option>`).join('')}</datalist></div>
     <p class="note" data-el="samedate" hidden></p>
     <div class="field"><span class="flabel">Tipo de culto</span>
       <div class="kinds" role="group" aria-label="Tipo de culto">${KIND_CHIPS.map(([k, t]) => `<button data-act="kind" data-v="${k}" aria-pressed="false">${t}</button>`).join('')}</div>
@@ -1536,14 +1537,14 @@ function openListEditor(id, opts) {
 }
 
 /* um culto por dia: colar de novo a escala do mesmo dia atualiza o culto e o link continua o mesmo */
-const sameDateList = p => p._new ? DATA.lists.find(x => x.date === p._d.date && x.id !== p._d.id) || null : null;
+const sameDateList = p => p._new ? DATA.lists.find(x => x.date === p._d.date && (x.time || '') === (p._d.time || '') && x.id !== p._d.id) || null : null;
 function refreshHead(p) {
   const d = p._d;
   const name = cultoName(d);
   $('[data-el="dayhint"]', p).textContent = isIso(d.date) ? longDate(d.date) + (name ? ' · ' + name : '') : '';
   const same = isIso(d.date) ? sameDateList(p) : null, n = $('[data-el="samedate"]', p);
   n.hidden = !same;
-  n.innerHTML = same ? `${ICON.info}<span>Já existe o culto deste dia. Ao salvar, ele é atualizado e o link enviado continua o mesmo.</span>` : '';
+  n.innerHTML = same ? `${ICON.info}<span>Já existe o culto deste dia${d.time ? ' neste horário' : ''}. Ao salvar, ele é atualizado e o link enviado continua o mesmo. Se for um segundo culto (ex.: à noite), preencha o horário.</span>` : '';
   $$('[data-act="kind"]', p).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === (d.kind || ''))));
   $('#le-kname', p).hidden = d.kind !== 'outro';
   refreshRehHint(p);
@@ -1719,7 +1720,7 @@ function saveList(p) {
   const same = sameDateList(p);
   const id = (!p._new && d.id) ? d.id : same ? same.id : listIdFor(d.date);
   const reh = d.reh && d.reh.time ? { date: isIso(d.reh.date) ? d.reh.date : d.date, time: d.reh.time } : null;
-  const list = { id, date: d.date, minister, kind: d.kind || '', name: d.kind === 'outro' ? d.name.trim() : '', reh, aviso: (d.aviso || '').trim(), items: d.items.map(cleanItem), diz: d.diz ? cleanItem(d.diz) : null, up: Date.now() };
+  const list = { id, date: d.date, time: d.time || '', minister, kind: d.kind || '', name: d.kind === 'outro' ? d.name.trim() : '', reh, aviso: (d.aviso || '').trim(), items: d.items.map(cleanItem), diz: d.diz ? cleanItem(d.diz) : null, up: Date.now() };
   const isNew = p._new;
   apply({ songs: [...touched.values()], lists: [list], people: mergeNames(d.people, minister ? [minister] : []), reh: rehMemo(list) }, { what: (isNew ? 'Criou o ' : 'Editou o ') + cultoLabel(list) });
   removePanel(p);
@@ -1908,14 +1909,14 @@ function deleteSong(p) {
 /* ===== Escala: a líder (administrador) monta; os membros só veem o que foi salvo ===== */
 const ES = { sub: 'mes', ym: '', step: 1, dstep: 1, blank: {}, hold: false };
 const ymOf = iso => iso.slice(0, 7);
-const escId = (date, kind, name) => date + kind + (kind === 'outro' ? '-' + normKey(name).slice(0, 30) : '');
+const escId = (date, kind, name, time) => date + kind + (kind === 'outro' ? '-' + normKey(name).slice(0, 30) : '') + (time ? '-' + time.replace(':', '') : '');
 const escById = id => (DATA.escala || []).find(e => e.id === id);
-const escGet = (date, kind, name) => escById(escId(date, kind, name || ''));
+const escGet = (date, kind, name, time) => escById(escId(date, kind, name || '', time || ''));
 const escPubGet = (date, kind) => { const e = escGet(date, kind); return e && e.pub ? e : null; };
-const escOf = (date, kind, name) => escGet(date, kind, name) || Object.assign(escNew(date, kind, name), { id: escId(date, kind, name || '') });
+const escOf = (date, kind, name, time) => escGet(date, kind, name, time) || Object.assign(escNew(date, kind, name, time), { id: escId(date, kind, name || '', time || '') });
 const escH = () => ({ songById, autoKey, newListId: listIdFor, listExists: id => !!listById(id), appUrl: appUrl(), me: meName() });
 const monthPub = ym => daysOf(ym, 0).some(iso => { const e = escGet(iso, 'dom'); return !!(e && e.pub); });
-const escLbl = e => (e.kind === 'dom' ? 'domingo' : (escLabel(e) || 'culto').toLowerCase()) + ' ' + dm(e.date);
+const escLbl = e => (e.kind === 'dom' ? 'domingo' : (escLabel(e) || 'culto').toLowerCase()) + ' ' + dm(e.date) + (e.time ? ' às ' + hmShort(e.time) : '');
 const escView = e => viewOf(e, DATA.lists, DATA.prefs, ES.blank[e.id] || 0);
 function roster() {
   const doc = escById('membros');
@@ -1948,7 +1949,7 @@ function escSave(e, what, extra) {
 function escSetSlot(e, k, val) {
   const o = clone(e);
   o.slots[k] = val;
-  if (o.kind === 'dom' && !o.pub && monthPub(ymOf(o.date))) o.pub = true;
+  if (o.kind === 'dom' && !o.time && !o.pub && monthPub(ymOf(o.date))) o.pub = true;
   const extra = {};
   if (k === 'min' && o.cpub) {
     const l = listFor(o, DATA.lists);
@@ -2043,7 +2044,7 @@ function escDom(adm) {
   return `<section class="e-ed">${headHTML(e || escNew(iso, 'dom'), nav)}${e ? readCultoHTML(e, listFor(e, DATA.lists), escH()) : '<p class="e-note">A escala deste domingo ainda não está pronta.</p>'}</section>`;
 }
 function escSem(adm) {
-  const list = escMonthDocs(adm).filter(e => e.kind !== 'dom');
+  const list = escMonthDocs(adm).filter(e => e.kind !== 'dom' || e.time); /* segundo culto de domingo fica aqui */
   let x = adm ? `<button class="btn pri wide e-mt" data-act="e-add">${ICON.plus}Adicionar culto</button>` : '<p class="e-top">Toque no culto para ver a escala do dia.</p>';
   if (!list.length) x += `<div class="empty e-mt"><p>${adm ? 'Nenhum culto de sexta ou especial neste mês. Toque em Adicionar culto.' : 'Nenhuma escala de sexta ou de culto especial pronta neste mês.'}</p></div>`;
   else x += weekListHTML(list, adm, meName());
@@ -2094,7 +2095,7 @@ function escRefresh(t, focusSel) {
   const again = id && $(id);
   if (again) try { again.focus({ preventScroll: true }); } catch (e) { /* ok */ }
 }
-const escCtx = el => { const s = el.closest('[data-eid]'); return s ? escOf(s.dataset.edate, s.dataset.ekind, s.dataset.ename) : null; };
+const escCtx = el => { const s = el.closest('[data-eid]'); return s ? escOf(s.dataset.edate, s.dataset.ekind, s.dataset.ename, s.dataset.etime) : null; };
 
 /* ---- mensagens e imagem ---- */
 function escDayMsg(e) {
@@ -2137,10 +2138,12 @@ function openEscMembers() {
 }
 function openEscAdd() {
   openSheet(`<h3>Adicionar culto</h3>
-    <div class="e-flabel">Tipo de culto</div><div class="kinds" id="e-sk" role="group" aria-label="Tipo de culto">${[['sex', 'Sexta'], ['jovens', 'Jovens'], ['mulheres', 'Mulheres'], ['outro', 'Outro']].map(([k, t], i) => `<button data-act="e-sk" data-v="${k}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>
+    <div class="e-flabel">Tipo de culto</div><div class="kinds" id="e-sk" role="group" aria-label="Tipo de culto">${[['sex', 'Sexta'], ['dom', 'Domingo'], ['jovens', 'Jovens'], ['mulheres', 'Mulheres'], ['outro', 'Outro']].map(([k, t], i) => `<button data-act="e-sk" data-v="${k}" aria-pressed="${i === 0}">${t}</button>`).join('')}</div>
     <input class="inp e-mt" id="e-sname" placeholder="Nome do culto (ex.: Vigília)" hidden autocomplete="off" maxlength="60">
     <div class="e-flabel">Dia</div><div class="e-sw" id="e-sdatew">${dateSelectHTML('sex', DATA.escala || [], today(), DATA.lists)}</div>
     <input class="inp e-mt" type="date" id="e-sother" aria-label="Outro dia" hidden>
+    <div class="e-flabel"><label for="e-stime">Horário do culto</label></div><input class="inp" type="time" id="e-stime">
+    <p class="hint" id="e-stimehint">Opcional. Preencha quando tiver 2 cultos no mesmo dia.</p>
     <button class="btn pri wide e-big" data-act="e-screate">Montar a escala</button>`);
 }
 
@@ -2250,6 +2253,7 @@ function escClick(b, act, p) {
       $('#e-sname').hidden = b.dataset.v !== 'outro';
       $('#e-sdatew').innerHTML = dateSelectHTML(b.dataset.v, DATA.escala || [], today(), DATA.lists);
       $('#e-sother').hidden = true;
+      $('#e-stimehint').textContent = b.dataset.v === 'dom' ? 'Obrigatório: o culto principal do domingo fica na Mensal; este é o segundo culto do dia.' : 'Opcional. Preencha quando tiver 2 cultos no mesmo dia.';
       if (b.dataset.v === 'outro') $('#e-sname').focus();
       break;
     }
@@ -2258,11 +2262,13 @@ function escClick(b, act, p) {
       let date = $('#e-sdate').value;
       if (date === '__other') { date = $('#e-sother').value; if (!isIso(date)) { $('#e-sother').focus(); toast('Escolha o dia'); break; } }
       if (k === 'outro' && !name) { $('#e-sname').focus(); toast('Escreva o nome do culto'); break; }
+      const time = $('#e-stime').value || '';
+      if (k === 'dom' && !time) { $('#e-stime').focus(); toast('Escolha o horário deste culto'); break; }
       closeSheet();
       ES.sub = 'sem';
       ES.ym = ymOf(date);
-      let ex = escGet(date, k, name);
-      if (!ex) { ex = escOf(date, k, name); ex.name = name; escSave(ex, 'Criou a escala'); }
+      let ex = escGet(date, k, name, time);
+      if (!ex) { ex = escOf(date, k, name, time); ex.name = name; ex.time = time; escSave(ex, 'Criou a escala'); }
       renderEscala(true);
       openEscDay(ex.id);
       break;
@@ -2544,6 +2550,7 @@ document.addEventListener('click', e => {
       const res = parseMessage(txt);
       if (res.date) d.date = res.date;
       if (res.minister) d.minister = res.minister;
+      if (res.time) { d.time = res.time; $('#le-time', p).value = res.time; }
       d.kind = res.kind || defaultKind(d.date);
       d._kindTouched = !!res.kind;
       d.name = '';
@@ -2714,6 +2721,7 @@ document.addEventListener('input', e => {
       return;
     }
     d[f] = t.value;
+    if (f === 'time') { refreshHead(p); return; }
     if (f === 'minister') { retune(d); refreshEditor(p); }
     if (f === 'name') {
       if (!d._rehTouched) { d.reh = defaultReh(d.date, d.kind, d.name, DATA.prefs); syncReh(p); }

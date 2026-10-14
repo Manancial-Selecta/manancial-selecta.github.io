@@ -1,6 +1,6 @@
 /* Regras do ministério: tipos de culto, ensaio, cifras de violão e teclado, mensagem do WhatsApp */
 import { detectKey, processCifra } from './music.js';
-import { UP, dObj, dm, wd, hm, relDay, addDays, daysBetween, isIso, WD_UP, WD_HEAD, normKey } from './util.js';
+import { UP, dObj, dm, wd, hm, hmShort, relDay, addDays, daysBetween, isIso, WD_UP, WD_HEAD, normKey } from './util.js';
 
 /* ===== Tipos de culto ===== */
 export const KINDS = { ceia: 'Culto de Ceia', jovens: 'Culto de Jovens', mulheres: 'Culto das Mulheres' };
@@ -142,7 +142,7 @@ export function itemText(it, songById) {
 }
 export function waText(l, songById, appUrl) {
   const d = dObj(l.date), name = cultoName(l);
-  const L = [`*LOUVORES ${WD_HEAD[d.getDay()]} DIA ${dm(l.date)}${name ? ' - ' + UP(name) : ''}*`];
+  const L = [`*LOUVORES ${WD_HEAD[d.getDay()]} DIA ${dm(l.date)}${l.time ? ' ÀS ' + UP(hmShort(l.time)) : ''}${name ? ' - ' + UP(name) : ''}*`];
   const top = [];
   if (l.minister) top.push(`*MINISTRO* : ${UP(l.minister)}`);
   if (l.reh && l.reh.time) top.push(`*ENSAIO* : ${WD_UP[dObj(l.reh.date).getDay()]} ${dm(l.reh.date)} ÀS ${UP(hm(l.reh.time))}`);

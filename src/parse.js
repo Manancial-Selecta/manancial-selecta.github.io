@@ -73,10 +73,16 @@ const DIZ_RE = /^(D[IÍ]ZIMOS?(?:\s+E\s+OFERTAS?)?|OFERTAS?|OFERT[OÓ]RIO)\s*:?\
 
 export function parseMessage(text) {
   const lines = String(text || '').replace(/\r/g, '').split('\n').map(l => l.replace(/[*_~]/g, '').replace(/\s+/g, ' ').trim());
-  const res = { date: '', minister: '', kind: '', reh: null, items: [], diz: null, aviso: '', people: [] };
+  const res = { date: '', time: '', minister: '', kind: '', reh: null, items: [], diz: null, aviso: '', people: [] };
   for (const l of lines) {
     const m = /\bDIA\s+(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?/i.exec(l);
-    if (m) { res.date = inferDate(+m[1], +m[2], m[3]); break; }
+    if (m) {
+      res.date = inferDate(+m[1], +m[2], m[3]);
+      /* horário do culto no título (quando há 2 cultos no dia): "DIA 18/10 ÀS 19H" */
+      const t = /^\s*(?:-\s*)?(?:[ÀA]S\s+)?(\d{1,2})\s*(?:H|HS|:)\s*(\d{2})?(?![\d/])/i.exec(l.slice(m.index + m[0].length));
+      if (t && +t[1] <= 23 && (!t[2] || +t[2] <= 59)) res.time = String(+t[1]).padStart(2, '0') + ':' + (t[2] || '00');
+      break;
+    }
   }
   if (!res.date) {
     for (const l of lines) {

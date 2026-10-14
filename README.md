@@ -62,6 +62,7 @@ App do ministério **Adoração & Artes Manancial Selecta**: cultos, louvores, c
   - **Mensal:** um domingo por vez, com caixas grandes (Ministro, Backs, Músicos, Mídia, Som). Embaixo, a grade do mês. **Salvar escala** mostra para todos; depois disso, cada mudança aparece na hora. **Enviar imagem e mensagem** manda a tabela e o texto juntos no WhatsApp.
   - **Domingo:** já vem com as pessoas da Mensal; escolha louvores, dízimos, ensaio e aviso. **Salvar escala** cria (ou atualiza) o culto na aba Cultos.
   - **Sexta e outros:** **Adicionar culto** (Sexta, Jovens, Mulheres ou Outro) e monte do mesmo jeito.
+  - **Dois cultos no mesmo dia** (ex.: manhã e noite): no culto, preencha **Horário**. Na Escala, o segundo culto de um domingo é criado em **Sexta e outros → Adicionar culto → Domingo**, com o horário; a Mensal continua com o culto principal.
   - **Membros e funções** (no fim da aba): marque o que cada pessoa faz; elas aparecem primeiro nas caixas.
 - **Importar o protótipo de novo:** iniciais → **Importar dados do protótipo** (só para quem administra).
 

@@ -48,6 +48,7 @@ export function normList(l, prefs) {
   return {
     id: str(o.id),
     date,
+    time: /^\d{1,2}:\d{2}$/.test(str(o.time)) ? str(o.time) : '',
     minister: str(o.minister),
     kind,
     name,
@@ -95,7 +96,7 @@ export function normEsc(e) {
   ESC_KEYS.forEach(k => { slots[k] = str(obj(o.slots)[k]).slice(0, 60); });
   const reh = o.reh && typeof o.reh === 'object' ? { day: o.reh.day === 'before' ? 'before' : 'same', time: /^\d{1,2}:\d{2}$/.test(str(o.reh.time)) ? str(o.reh.time) : '' } : null;
   return {
-    id: str(o.id), date: isIso(o.date) ? o.date : '', kind: ['dom', 'sex', 'jovens', 'mulheres', 'outro'].includes(o.kind) ? o.kind : 'outro',
+    id: str(o.id), date: isIso(o.date) ? o.date : '', time: /^\d{1,2}:\d{2}$/.test(str(o.time)) ? str(o.time) : '', kind: ['dom', 'sex', 'jovens', 'mulheres', 'outro'].includes(o.kind) ? o.kind : 'outro',
     name: str(o.name).slice(0, 60), slots, pub: !!o.pub, cpub: !!o.cpub,
     items: Array.isArray(o.items) ? o.items.map(str).slice(0, 30) : null, diz: str(o.diz), reh, aviso: str(o.aviso).slice(0, 300),
     up: Number(o.up) || 0, by: str(o.by)

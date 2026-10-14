@@ -4,7 +4,7 @@
    - Sexta e outros: um culto por vez, do mesmo jeito.
    Este módulo só monta HTML e textos; quem grava é o app (apply). */
 import { ESC_KEYS } from './model.js';
-import { esc, UP, dObj, dm, isoOf, addDays, norm, hm, WD_UP } from './util.js';
+import { esc, UP, dObj, dm, isoOf, addDays, norm, hm, hmShort, WD_UP } from './util.js';
 import { defaultKind, defaultReh, groupItems, itemText } from './domain.js';
 import { ICON } from './icons.js';
 
@@ -35,7 +35,7 @@ export const isCeiaDay = iso => dObj(iso).getDay() === 0 && dObj(iso).getDate() 
 export const backsOf = s => [s.v0, s.v1, s.v2].filter(Boolean);
 export const escLabel = e => e.kind === 'outro' ? e.name : EKIND[e.kind];
 export const blankSlots = () => Object.fromEntries(ESC_KEYS.map(k => [k, '']));
-export const escNew = (date, kind, name) => ({ id: date + kind, date, kind, name: name || '', slots: blankSlots(), pub: false, cpub: false, items: null, diz: '', reh: null, aviso: '' });
+export const escNew = (date, kind, name, time) => ({ id: date + kind, date, time: time || '', kind, name: name || '', slots: blankSlots(), pub: false, cpub: false, items: null, diz: '', reh: null, aviso: '' });
 /* tipo do culto na aba Cultos */
 export const listKindOf = e => e.kind === 'dom' ? defaultKind(e.date) : e.kind === 'sex' ? '' : e.kind;
 /* mesmo nome: igual ou mesmo primeiro nome ("Júlia" e "Júlia Souza") */
@@ -48,9 +48,13 @@ export const rolesOf = (e, name) => [...new Set(ESC_KEYS.filter(k => sameName(e.
 
 /* o culto (aba Cultos) ligado a esta escala */
 export function listFor(e, lists) {
-  const same = lists.filter(l => l.date === e.date);
-  return same.find(l => (l.kind || '') === listKindOf(e)) || (e.kind === 'dom' || e.kind === 'sex' ? same[0] : null) || null;
+  const all = lists.filter(l => l.date === e.date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  /* dois cultos no mesmo dia: cada escala fica com o culto do seu horário */
+  let same = all.filter(l => (l.time || '') === (e.time || ''));
+  if (!same.length && !e.time) same = all.slice(0, 1);
+  return same.find(l => (l.kind || '') === listKindOf(e)) || (e.kind === 'dom' || e.kind === 'sex' || e.time ? same[0] : null) || null;
 }
+export const timeTxt = e => e.time ? ' · ' + hmShort(e.time) : '';
 /* o que a tela mostra de louvores/ensaio/aviso: depois de salvo vem do culto; antes, do rascunho */
 export function viewOf(e, lists, prefs, extraBlank) {
   const l0 = listFor(e, lists), l = e.cpub || (l0 && e.items == null) ? l0 : null;
@@ -68,7 +72,7 @@ export function viewOf(e, lists, prefs, extraBlank) {
 }
 /* monta o culto a partir da escala, aproveitando tom/observação dos louvores que já estavam lá */
 export function listFromView(e, v, base, H) {
-  const l = base ? JSON.parse(JSON.stringify(base)) : { id: H.newListId(e.date), date: e.date, minister: '', kind: '', name: '', reh: null, aviso: '', items: [], diz: null };
+  const l = base ? JSON.parse(JSON.stringify(base)) : { id: H.newListId(e.date), date: e.date, time: e.time || '', minister: '', kind: '', name: '', reh: null, aviso: '', items: [], diz: null };
   const minister = e.slots.min || l.minister || '';
   const pool = (base ? base.items.concat(base.diz ? [base.diz] : []) : []).map(x => Object.assign({}, x));
   const mk = id => {
@@ -94,7 +98,7 @@ const wdFull = iso => { const i = dObj(iso).getDay(); return i === 0 ? 'DOMINGO'
 export function dayMsg(e, l, H) {
   const s = e.slots, L = [], i = dObj(e.date).getDay();
   const extra = e.kind === 'dom' ? (isCeiaDay(e.date) ? ' - CULTO DE CEIA' : '') : e.kind === 'sex' ? '' : ' - ' + UP(escLabel(e));
-  L.push(`*ESCALA ${i === 0 || i === 6 ? 'DO' : 'DA'} ${wdFull(e.date)} DIA ${dm(e.date)}${extra}*`, '');
+  L.push(`*ESCALA ${i === 0 || i === 6 ? 'DO' : 'DA'} ${wdFull(e.date)} DIA ${dm(e.date)}${e.time ? ' ÀS ' + UP(hmShort(e.time)) : ''}${extra}*`, '');
   L.push(`*MINISTRO* : ${s.min ? UP(s.min) : '—'}`);
   backsOf(s).forEach(v => L.push('• ' + UP(v)));
   const ins = [['tec', 'TECLADO'], ['bai', 'BAIXO'], ['bat', 'BATERIA'], ['gui', 'GUITARRA'], ['vio', 'VIOLÃO']].filter(([k]) => s[k]);
@@ -127,10 +131,10 @@ export function monthMsg(ym, get, appUrl) {
 }
 
 /* ===== pedaços de tela ===== */
-const eid = e => `data-eid="${esc(e.id)}" data-edate="${e.date}" data-ekind="${e.kind}" data-ename="${esc(e.name)}"`;
+const eid = e => `data-eid="${esc(e.id)}" data-edate="${e.date}" data-ekind="${e.kind}" data-ename="${esc(e.name)}" data-etime="${esc(e.time || '')}"`;
 export function headHTML(e, nav) {
   const d = dObj(e.date);
-  const kicker = e.kind === 'dom' ? 'Domingo' + (isCeiaDay(e.date) ? '<span class="e-tag">Ceia</span>' : '') : esc(escLabel(e)) + ' · ' + WD[d.getDay()];
+  const kicker = (e.kind === 'dom' ? 'Domingo' : esc(escLabel(e)) + ' · ' + WD[d.getDay()]) + timeTxt(e) + (e.kind === 'dom' && isCeiaDay(e.date) ? '<span class="e-tag">Ceia</span>' : '');
   return `<div class="e-head"><div><small>${kicker}</small><div class="e-dt">${d.getDate()} ${UP(MO[d.getMonth()].slice(0, 3))}</div></div>${nav || ''}</div>`;
 }
 export const navHTML = (act, i, n, what) => `<div class="e-steps"><button class="e-stepbtn" data-act="${act}" data-d="-1" ${i <= 1 ? 'disabled' : ''} aria-label="${what} anterior">${ICON.back}</button><button class="e-stepbtn" data-act="${act}" data-d="1" ${i >= n ? 'disabled' : ''} aria-label="Próximo ${what.toLowerCase()}">${ICON.chev}</button></div>`;
@@ -223,7 +227,7 @@ export function mineHTML(list, ym, me) {
   const rows = [];
   list.forEach(e => {
     const rs = rolesOf(e, me);
-    if (rs.length) rows.push(`<li><button data-act="e-mine" data-id="${esc(e.id)}"><span class="d">${WS[dObj(e.date).getDay()]} ${dm(e.date)}</span><span class="t">${rs.join(' e ')}${e.kind !== 'dom' && e.kind !== 'sex' ? ' · ' + esc(escLabel(e)) : ''}</span>${ICON.chev}</button></li>`);
+    if (rs.length) rows.push(`<li><button data-act="e-mine" data-id="${esc(e.id)}"><span class="d">${WS[dObj(e.date).getDay()]} ${dm(e.date)}</span><span class="t">${rs.join(' e ')}${e.kind !== 'dom' && e.kind !== 'sex' ? ' · ' + esc(escLabel(e)) : ''}${timeTxt(e)}</span>${ICON.chev}</button></li>`);
   });
   return `<section class="e-mine" aria-label="Sua escala"><div class="lbl">Sua escala em ${monName(ym)}</div>${rows.length ? `<ul>${rows.join('')}</ul>` : '<p class="none">Você não está escalado neste mês.</p>'}</section>`;
 }
@@ -233,7 +237,7 @@ export function weekListHTML(list, admin, me) {
     const status = e.pub ? 'Salva' : filled ? 'Rascunho' : 'Vazia';
     const sum = e.slots.min ? `Ministro ${UP(e.slots.min)}` : (filled ? `${filled} de ${ESC_KEYS.length} preenchidos` : 'Toque para montar');
     return `<li><button class="e-wcard${meIn ? ' me' : ''}" data-act="e-day" data-id="${esc(e.id)}"><span class="wday"><small>${WS[d.getDay()]}</small><b>${String(d.getDate()).padStart(2, '0')}</b></span>
-      <span class="wt"><span class="k">${esc(escLabel(e))}</span><b>${WD[d.getDay()]}, ${dm(e.date)}</b><small>${admin ? status + ' · ' : ''}${meIn ? 'Você: ' + rolesOf(e, me).join(' e ') : esc(sum)}</small></span><span class="chev">${ICON.chev}</span></button></li>`;
+      <span class="wt"><span class="k">${esc(escLabel(e))}</span><b>${WD[d.getDay()]}, ${dm(e.date)}${timeTxt(e)}</b><small>${admin ? status + ' · ' : ''}${meIn ? 'Você: ' + rolesOf(e, me).join(' e ') : esc(sum)}</small></span><span class="chev">${ICON.chev}</span></button></li>`;
   }).join('') + '</ul>';
 }
 export { eid };
@@ -244,6 +248,11 @@ export function dateOptions(kind, all, todayIso, lists) {
   const same = all.filter(e => e.kind === kind).map(e => e.date)
     .concat((lists || []).filter(l => kind !== 'outro' && (l.kind || '') === lk && (kind !== 'sex' || dObj(l.date).getDay() === 5)).map(l => l.date)).sort();
   let start = todayIso;
+  if (kind === 'dom') { /* segundo culto de um domingo: os próximos domingos */
+    const out = [];
+    for (let iso = todayIso; out.length < 10; iso = addDays(iso, 1)) if (dObj(iso).getDay() === 0) out.push(iso);
+    return out;
+  }
   if (same.length && addDays(same[same.length - 1], 1) > start) start = addDays(same[same.length - 1], 1);
   const ok = kind === 'sex' ? [5] : [5, 6, 0], out = [];
   for (let iso = start; out.length < 10 && iso < addDays(start, 150); iso = addDays(iso, 1)) {

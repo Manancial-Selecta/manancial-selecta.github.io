@@ -169,6 +169,45 @@ async function until(fn, ms) {
     await page.screenshot({ path: path.join(SHOTS, 'e4-sexta.png'), fullPage: true });
     await page.click('.panel [data-act="close"]');
     check(await page.locator('#tab-escala .e-wcard').count() === 1, 'card da sexta na lista');
+
+    /* dois cultos no mesmo dia: culto da noite pela aba Cultos */
+    await page.click('[data-act="tab"][data-v="cultos"]');
+    await page.click('[data-act="new-list"]');
+    await page.fill('.panel #le-paste', '*LOUVORES DO DOMINGO DIA 11/10 ÀS 19H*\n\n*MINISTRO* : TIAGO\n\n1) OCEANOS');
+    await page.click('.panel [data-act="parse"]');
+    check(await page.locator('.panel #le-time').inputValue() === '19:00' && await page.locator('.panel [data-el="samedate"]').isHidden(), 'horário lido da mensagem; não junta com o culto da manhã');
+    await page.locator('.panel #le-date').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: path.join(SHOTS, 'e8-horario.png') });
+    await page.locator('.panel [data-act="save-list"]').first().click();
+    await page.waitForSelector('.panel .hero');
+    check(/19h/.test(await page.locator('.panel .hero .wd').textContent()), 'página do culto mostra o horário');
+    await page.click('.panel [data-act="close"]');
+    d = await D();
+    const l11s = d.lists.filter(l => l.date === '2026-10-11');
+    check(l11s.length === 2 && l11s.some(l => l.time === '19:00' && l.minister === 'Tiago') && l11s.some(l => !l.time && l.minister === 'Marcos'), 'dois cultos no mesmo dia', l11s.map(l => [l.id, l.time, l.minister]));
+    check(await page.locator('.lcard', { hasText: '11 de outubro · 19h' }).count() === 1, 'card mostra o horário');
+    /* escala do segundo culto em Sexta e outros */
+    await page.click('[data-act="tab"][data-v="escala"]');
+    await page.click('[data-act="e-add"]');
+    await page.click('#e-sk [data-v="dom"]');
+    await page.selectOption('#e-sdate', '2026-10-11');
+    await page.click('[data-act="e-screate"]');
+    check(/horário/.test(await page.locator('#toast').textContent()), 'segundo culto de domingo pede o horário');
+    await page.fill('#e-stime', '19:00');
+    await page.click('[data-act="e-screate"]');
+    await page.waitForSelector('.panel .e-ed');
+    check(/Domingo · 19h/.test(await page.locator('.panel .e-head').textContent()), 'escala do culto da noite');
+    check(await page.locator('.panel [data-esq="0"]').inputValue() === 'Oceanos', 'pega os louvores do culto da noite');
+    await page.selectOption('.panel [data-ek="min"]', 'Carla');
+    await page.click('.panel [data-act="e-cpub"]');
+    d = await D();
+    check(d.lists.find(l => l.date === '2026-10-11' && l.time === '19:00').minister === 'Carla' && d.lists.find(l => l.date === '2026-10-11' && !l.time).minister === 'Marcos', 'cada escala mexe só no seu culto');
+    check(d.escala.find(e => e.id === '2026-10-11dom').slots.min === 'Marcos', 'escala mensal não muda');
+    await page.click('.panel [data-act="e-daymsg"]');
+    check(/^\*ESCALA DO DOMINGO DIA 11\/10 ÀS 19H\*/.test(await page.locator('.sheet .e-msg').textContent()), 'mensagem do segundo culto com horário');
+    await page.click('.scrim', { position: { x: 10, y: 10 } });
+    await page.click('.panel [data-act="close"]');
+    check(await page.locator('#tab-escala .e-wcard').count() === 2, 'segundo culto aparece em Sexta e outros');
     const ov = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
     check(!ov, 'aba cabe na largura do celular');
 
@@ -208,7 +247,7 @@ async function until(fn, ms) {
     check(await page.locator('.panel').count() === 1, 'tocar no louvor abre o louvor');
     await page.keyboard.press('Escape');
     await page.click('[data-act="e-sub"][data-v="sem"]');
-    check(await page.locator('#tab-escala .e-wcard.me').count() === 0 && await page.locator('#tab-escala .e-wcard').count() === 1, 'membro vê a sexta salva');
+    check(await page.locator('#tab-escala .e-wcard').count() === 2, 'membro vê a sexta e o culto da noite');
     /* link da mensagem do mês abre a aba com Sua escala */
     await page.goto(BASE + '#escala-mes-2026-10');
     await page.waitForSelector('#tab-escala:not([hidden]) .e-mine');
