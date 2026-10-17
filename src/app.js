@@ -12,6 +12,9 @@ import { ICON } from './icons.js';
 import { createLocalStore } from './store-local.js';
 import { EFN, songLabel, escNew, escLabel, daysOf, monName, listFor, viewOf, listFromView, dayMsg, monthMsg, headHTML, navHTML as escNavHTML, fieldsHTML, cultoEditHTML, readCultoHTML, gridHTML, mineHTML, weekListHTML, rolesOf, eid, dateSelectHTML, monthImage } from './escala-ui.js';
 
+/* mesma versão do sw.js (aparece no fim do menu) */
+export const APP_VERSION = '1.4.2';
+
 /* ===== Estado ===== */
 const S = {
   tab: 'cultos', q: '', ready: false,
@@ -589,6 +592,7 @@ function openMeMenu() {
       <button role="menuitem" data-act="import">${ICON.upload}Importar dados do protótipo</button>`
     : `<button role="menuitem" data-act="become-admin">${ICON.shield}Entrar como administrador</button>`}
     <button role="menuitem" data-act="leave">${ICON.logout}Sair deste aparelho</button>
+    <p class="mver">Versão ${APP_VERSION}</p>
   </div>`;
   w.addEventListener('click', e => { if (e.target === w) closeMenu(); });
   document.body.appendChild(w);
@@ -1393,8 +1397,49 @@ function renderAudio(p) {
     <p class="ainfo">Gravação em <span class="selw sm"><select class="inp asel" data-au="rec" aria-label="Tom da gravação">${au.rec ? '' : '<option value="" selected>?</option>'}${recOpts}</select></span> → ${tg && au.rec ? `tocando em <b>${esc(tg)}</b> · ${tonsTxt(n)}` : 'tocando no tom original. Escolha o tom da gravação e um tom acima para mudar.'}</p>
     ${Math.abs(n) > 4 ? '<p class="hint">Mudança grande: o som pode ficar um pouco artificial.</p>' : ''}
     <p class="hint">Se a gravação estiver em outro tom, ajuste em "Gravação em".</p>
+    ${mp3HTML(au, tg, busy)}
     <div class="arow">${pick('Trocar áudio')}<button class="linkbtn" data-act="a-del">Remover</button>${yt}</div>`;
   if (s.playing) tickAudio(p);
+}
+/* baixar o áudio já no tom (MP3), para mandar a quem não consegue usar o Áudio no tom */
+function mp3HTML(au, tg, busy) {
+  const m = au.mp3;
+  if (m && m.busy) return `<div class="amp3"><button class="btn" disabled>${ICON.install}Gerando MP3… <span data-el="mp3p">${m.p || 0}%</span></button></div>`;
+  if (m && m.file && m.tg === tg) return `<div class="amp3"><p class="hint">MP3 pronto: ${esc(m.file.name)}</p><div class="arow">${m.share ? `<button class="btn pri" data-act="a-mp3-send">${ICON.send}Enviar</button>` : ''}<a class="btn${m.share ? '' : ' pri'}" href="${m.url}" download="${esc(m.file.name)}">${ICON.install}Salvar no celular</a></div></div>`;
+  return `<div class="amp3"><button class="btn" data-act="a-mp3" ${busy ? 'disabled' : ''}>${ICON.install}Baixar MP3${tg ? ' em ' + esc(tg) : ''}</button></div>`;
+}
+async function audioMp3(p) {
+  const st = p._st, au = st.au, so = songById(st.id), tg = audioTarget(st);
+  if (!au || !au.player || (au.mp3 && au.mp3.busy)) return;
+  if (au.mp3 && au.mp3.url) URL.revokeObjectURL(au.mp3.url);
+  au.mp3 = { busy: true, p: 0, tg };
+  renderAudio(p);
+  try {
+    const mod = await audioMod();
+    const r = await au.player.render();
+    if (!r) throw new Error('áudio ainda não está pronto');
+    const blob = await mod.encodeMp3(r.data, r.sr, pct => {
+      if (!au.mp3 || !au.mp3.busy) return;
+      au.mp3.p = pct;
+      const el = $('[data-el="mp3p"]', p);
+      if (el) el.textContent = pct + '%';
+    });
+    const name = ((so ? so.title : 'Louvor') + (tg ? ' - tom ' + tg : '')).replace(/[\\/:*?"<>|]/g, '').trim() + '.mp3';
+    const file = new File([blob], name, { type: 'audio/mpeg' });
+    let share = false;
+    try { share = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) { share = false; }
+    au.mp3 = { busy: false, tg, file, url: URL.createObjectURL(blob), share };
+  } catch (e) {
+    console.error(e);
+    au.mp3 = null;
+    toast('Não deu para gerar o MP3 neste aparelho.');
+  }
+  if (p.isConnected) renderAudio(p);
+}
+function audioMp3Send(p) {
+  const m = p._st.au && p._st.au.mp3;
+  if (!m || !m.file) return;
+  navigator.share({ files: [m.file], title: m.file.name }).catch(() => {});
 }
 function audioInput(p, t) {
   const st = p._st, au = st.au;
@@ -2539,6 +2584,8 @@ document.addEventListener('click', e => {
     case 'audio': toggleAudio(p); break;
     case 'a-play': audioPlay(p); break;
     case 'a-del': audioRemove(p); break;
+    case 'a-mp3': audioMp3(p); break;
+    case 'a-mp3-send': audioMp3Send(p); break;
     case 'toggle-chords': S.chords = !S.chords; storeSet('localStorage', 'lm-chords', S.chords ? '1' : '0'); updateSongPanel(p); break;
     case 'chord': openChordSheet(b.dataset.v); break;
     case 'chord-inst': openChordSheet(b.dataset.c, b.dataset.v); break;

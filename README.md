@@ -92,6 +92,8 @@ Não tem etapa de build: são arquivos estáticos (HTML, CSS e módulos JavaScri
 | `src/music.js` | tons, transposição, capotraste, cifras |
 | `src/chords.js` | desenhos dos acordes: violão (formas conhecidas + busca) e teclado |
 | `src/youtube.js` | vídeo do YouTube dentro do app |
+| `src/audio.js`, `src/stretch*.js`, `src/mp3-worker.js` | Áudio no tom: muda o tom do áudio do celular e gera o MP3 no tom ("Baixar MP3") |
+| `vendor/lame.min.js` | lamejs 1.2.1 (codificador MP3, LGPL — `vendor/LICENSE-lamejs.txt`) |
 | `firestore.rules` | regras de acesso do banco |
 
 **Banco (Firestore):** `songs/{id}` (louvor: título, versão, tom, `cifra` e `cifraKb` de teclado, `yt`...), `lists/{id}` (culto: data, ministro, tipo, ensaio, louvores, dízimos, aviso), `meta/app` (nomes e horários de ensaio lembrados), `members/{uid}` (quem entrou), `config/access` (código, só as regras leem), `config/admin` (senha de administrador, só as regras leem), `escala/{id}` (escala de um dia: `data`+`tipo`, pessoas por função, louvores do rascunho, `pub` salva; `escala/membros` guarda as funções de cada membro; só administrador grava), `log/{id}` (histórico: quem abriu e o que mudou; só administrador lê) e `config/public`. Excluir marca `deleted: true` (permite desfazer). Cada gravação leva `at` (hora do servidor) e `by` (nome de quem alterou).

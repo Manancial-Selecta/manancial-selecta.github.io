@@ -115,7 +115,36 @@ export function createPlayer(onState) {
       emit();
     },
     time: now,
+    /* o áudio inteiro no tom que está tocando (para baixar em MP3) */
+    async render() {
+      if (!buf || state.status !== 'ready') return null;
+      const r = rate(bufN), len = Math.max(1, Math.ceil(buf.length / r));
+      const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      const off = new OAC(1, len, SR);
+      const s = off.createBufferSource();
+      s.buffer = buf;
+      s.playbackRate.value = r;
+      s.connect(off.destination);
+      s.start(0);
+      const res = await new Promise((ok, no) => { off.oncomplete = ev => ok(ev.renderedBuffer); const pr = off.startRendering(); if (pr && pr.then) pr.then(ok, no); });
+      return { data: res.getChannelData(0), sr: SR };
+    },
     get state() { return Object.assign({}, state, { t: now() }); },
     close() { closed = true; stopSrc(); try { worker.terminate(); } catch (e) { /* ok */ } try { ctx.close(); } catch (e) { /* ok */ } }
   };
+}
+
+/* MP3 a partir do áudio no tom; avisa o andamento (0 a 100) */
+export function encodeMp3(data, sr, onProgress) {
+  return new Promise((ok, no) => {
+    const w = new Worker(new URL('./mp3-worker.js', import.meta.url));
+    w.onmessage = e => {
+      const m = e.data;
+      if (m.type === 'progress') { if (onProgress) onProgress(m.p); return; }
+      w.terminate();
+      if (m.type === 'done') ok(new Blob(m.parts, { type: 'audio/mpeg' })); else no(new Error(m.error || 'mp3'));
+    };
+    w.onerror = err => { w.terminate(); no(err); };
+    w.postMessage({ data, sr, kbps: 96 });
+  });
 }

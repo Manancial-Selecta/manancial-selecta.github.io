@@ -679,3 +679,8 @@ textarea.inp.e-aviso { margin-top: 12px; min-height: 84px; height: 84px; font-fa
 .e-srow .e-x { margin-top: 6px; }
 .e-dizlbl { margin-top: 16px; font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--accent-text); }
 .e-dizlbl + .e-ro { margin-top: 4px; }
+/* 1.4.2: baixar MP3 no tom; versão no menu */
+.amp3 { margin-top: 12px; }
+.amp3 .btn svg { width: 17px; height: 17px; }
+.amp3 .hint { margin-bottom: 6px; word-break: break-word; }
+.mver { margin: 6px 10px 4px; font-size: 12px; color: var(--muted); }

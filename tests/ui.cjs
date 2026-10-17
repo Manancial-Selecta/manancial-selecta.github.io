@@ -489,6 +489,13 @@ async function until(fn, ms) {
     await ap.locator('.kchip', { hasText: new RegExp('^' + k2.trim() + '$') }).first().click();
     check(await until(async () => /(tom|tons) (acima|abaixo)/.test(await ap.locator('.ainfo').textContent()) && !(await ap.locator('.aplay').isDisabled()), 15000), 'trocar o tom muda o áudio', await ap.locator('.ainfo').textContent());
 
+    /* baixar o áudio no tom em MP3 */
+    check(new RegExp('Baixar MP3 em ' + k2.trim().replace('#', '\\#')).test(await ap.locator('[data-act="a-mp3"]').textContent()), 'botão Baixar MP3 no tom');
+    await ap.locator('[data-act="a-mp3"]').click();
+    check(await until(async () => (await ap.locator('.amp3 a[download]').count()) === 1, 20000), 'MP3 gerado');
+    const mp3 = await ap.locator('.amp3 a[download]').evaluate(async a => { const b = await (await fetch(a.href)).arrayBuffer(); const u = new Uint8Array(b); return { name: a.getAttribute('download'), size: u.length, head: [u[0], u[1]] }; });
+    check(mp3.size > 1000 && /Teste Letra - tom /.test(mp3.name) && /\.mp3$/.test(mp3.name) && ((mp3.head[0] === 0xFF && (mp3.head[1] & 0xE0) === 0xE0) || mp3.head[0] === 0x49), 'arquivo MP3 válido', mp3);
+
     await ap.locator('.aplay').click();
     await ap.locator('[data-act="close"]').first().click();
     /* guardado no aparelho: ao abrir de novo, o áudio já está lá */

@@ -211,5 +211,11 @@ eq(ytId('não é link'), '', 'texto qualquer');
   eq(dateOptions('dom', [{ id: '2026-10-18dom', kind: 'dom', date: '2026-10-18' }], '2026-10-14').slice(0, 2), ['2026-10-18', '2026-10-25'], 'segundo culto: próximos domingos, mesmo os que já têm culto');
 }
 
+/* versão do app igual à do sw.js */
+{
+  const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8'), app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  eq(/APP_VERSION = '([^']+)'/.exec(app)[1], /const VERSION = '([^']+)'/.exec(sw)[1], 'versão do menu igual à do sw.js');
+}
+
 console.log(fails ? `\n${fails} de ${count} testes falharam` : `TUDO OK (${count} testes)`);
 process.exit(fails ? 1 : 0);
