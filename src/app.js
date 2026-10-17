@@ -1329,6 +1329,8 @@ function audioFile(p, input) {
   if (!f) return;
   const st = p._st;
   if (f.size > 40 * 1024 * 1024) { toast('Esse arquivo é grande demais (máximo 40 MB).'); return; }
+  /* no iPhone a caixa de arquivos fica livre (com filtro ela escurece alguns áudios); aqui confere se parece áudio */
+  if (!/^(audio|video)\//.test(f.type || '') && !/\.(mp3|m4a|aac|wav|aif|aiff|caf|ogg|opus|flac|mp4|m4v|mov|webm)$/i.test(f.name || '')) { toast('Esse arquivo não parece ser um áudio. Escolha um MP3 ou M4A.'); return; }
   audioMod().then(mod => {
     const rec = (st.au && st.au.rec) || origKey(songById(st.id)) || audioTarget(st) || '';
     mod.saveAudio(st.id, { blob: f, name: f.name, rec }).catch(() => toast('Não deu para guardar o áudio neste aparelho; ele vale só enquanto a tela estiver aberta.'));
@@ -1368,7 +1370,7 @@ function renderAudio(p) {
   if (!box || !so || !au) return;
   const tg = audioTarget(st), n = audioShift(p), s = au.s || {};
   const yt = `<a class="minilink" href="${esc(ytToneLink(so, tg))}" target="_blank" rel="noopener">Procurar no YouTube${tg ? ' em ' + esc(tg) : ''}</a>`;
-  const pick = label => `<label class="btn${au.name ? '' : ' pri'} afile">${ICON.music}<span>${label}</span><input type="file" accept="audio/*" data-au="file" hidden></label>`;
+  const pick = label => `<label class="btn${au.name ? '' : ' pri'} afile">${ICON.music}<span>${label}</span><input type="file"${isIOS() ? '' : ' accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.opus,.flac,.mp4"'} data-au="file" hidden></label>`;
   if (!au.name) {
     box.innerHTML = `<p class="ah">Ouvir em outro tom</p>
       <p class="hint">O vídeo do YouTube não deixa mudar o tom. Escolha o áudio desta música que você tem no celular (MP3, M4A…) e o app toca no tom que você está vendo. O arquivo fica só neste aparelho.</p>
